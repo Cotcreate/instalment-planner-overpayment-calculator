@@ -1,0 +1,15 @@
+{
+  "name": "injectatrace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "InjectaTrace: mobile-first site capture and back office PWA",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "test": "node tests/mobile-check.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}
