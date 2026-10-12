@@ -1,12 +1,12 @@
-// Photo storage in IndexedDB. Images are downscaled before saving to keep the device light.
+// File storage in IndexedDB: photos, video and documents. Photos are downscaled before saving.
 
-const DB = 'injectatrace-photos';
+const DB = 'injectatrace-files';
 let dbp;
 
 function db() {
   dbp ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore('photos');
+    req.onupgradeneeded = () => req.result.createObjectStore('files');
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -16,8 +16,8 @@ function db() {
 async function tx(mode, fn) {
   const d = await db();
   return new Promise((resolve, reject) => {
-    const t = d.transaction('photos', mode);
-    const out = fn(t.objectStore('photos'));
+    const t = d.transaction('files', mode);
+    const out = fn(t.objectStore('files'));
     t.oncomplete = () => resolve(out?.result);
     t.onerror = () => reject(t.error);
   });
@@ -34,14 +34,15 @@ export async function downscale(file, max = 1600, quality = 0.75) {
   return new Promise((r) => c.toBlob(r, 'image/jpeg', quality));
 }
 
-export const putPhoto = (id, blob) => tx('readwrite', (s) => s.put(blob, id));
-export const getPhoto = (id) => tx('readonly', (s) => s.get(id));
-export const deletePhoto = (id) => tx('readwrite', (s) => s.delete(id));
+export const putFile = (id, blob) => tx('readwrite', (s) => s.put(blob, id));
+export const getFile = (id) => tx('readonly', (s) => s.get(id));
+export const deleteFile = (id) => tx('readwrite', (s) => s.delete(id));
 
 const urls = new Map();
-export async function photoURL(id) {
+export async function fileURL(id) {
+  if (!id) return null;
   if (urls.has(id)) return urls.get(id);
-  const blob = await getPhoto(id).catch(() => null);
+  const blob = await getFile(id).catch(() => null);
   if (!blob) return null;
   const u = URL.createObjectURL(blob);
   urls.set(id, u);

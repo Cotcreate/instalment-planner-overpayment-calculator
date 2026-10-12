@@ -1,38 +1,38 @@
 // Elevation drawing: pinch to zoom, drag to pan, tap to drop a pin, confirm before it sticks.
 // Big +/− buttons too, because pinching in gloves is unreliable.
-import { floorAt, bayAt } from './store.js';
+import { levelAt, bayAt } from './store.js';
 
 const BAY = 64, FLOOR = 48, ML = 48, MT = 28, MR = 16, MB = 34;
 const TAP_SLOP = 10;   // px of movement before a touch counts as a drag
 const TAP_MS = 450;
-const PIN_SVG = '<svg viewBox="0 0 30 40" aria-hidden="true"><path d="M15 39C15 39 2 23 2 14a13 13 0 0 1 26 0c0 9-13 25-13 25z" fill="#FF6A13" stroke="#0B1F3A" stroke-width="2.5"/><circle cx="15" cy="14" r="5" fill="#0B1F3A"/></svg>';
+const PIN_SVG = '<svg viewBox="0 0 30 40" aria-hidden="true"><path d="M15 39C15 39 2 23 2 14a13 13 0 0 1 26 0c0 9-13 25-13 25z" fill="#F5832C" stroke="#183756" stroke-width="2.5"/><circle cx="15" cy="14" r="5" fill="#183756"/></svg>';
 export const pinIcon = PIN_SVG;
 
 function drawing(el) {
   const fw = el.bays * BAY, fh = el.floors * FLOOR;
   const W = ML + fw + MR, H = MT + fh + MB;
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${el.name} elevation, ${el.floors} floors, ${el.bays} bays">`;
-  s += `<rect x="${ML - 6}" y="${MT - 10}" width="${fw + 12}" height="10" fill="#0B1F3A"/>`;
-  s += `<rect x="${ML}" y="${MT}" width="${fw}" height="${fh}" fill="#E4E8EE" stroke="#0B1F3A" stroke-width="2"/>`;
+  s += `<rect x="${ML - 6}" y="${MT - 10}" width="${fw + 12}" height="10" fill="#183756"/>`;
+  s += `<rect x="${ML}" y="${MT}" width="${fw}" height="${fh}" fill="#F7F9FB" stroke="#183756" stroke-width="2"/>`;
   for (let f = 0; f < el.floors; f++) {
     const y = MT + f * FLOOR;
-    if (f) s += `<line x1="${ML}" y1="${y}" x2="${ML + fw}" y2="${y}" stroke="#9AA6B8" stroke-width="1.5"/>`;
+    if (f) s += `<line x1="${ML}" y1="${y}" x2="${ML + fw}" y2="${y}" stroke="#C9D4DF" stroke-width="1.5"/>`;
     const lvl = el.floors - f - 1;
-    s += `<text x="${ML - 10}" y="${y + FLOOR / 2 + 5}" text-anchor="end" font-size="13" font-weight="700" fill="#33415A">${lvl === 0 ? 'G' : 'L' + lvl}</text>`;
+    s += `<text x="${ML - 10}" y="${y + FLOOR / 2 + 5}" text-anchor="end" font-size="13" font-weight="700" fill="#4A6178">${lvl === 0 ? 'G' : 'L' + lvl}</text>`;
     for (let b = 0; b < el.bays; b++) {
       const x = ML + b * BAY;
       const isDoor = f === el.floors - 1 && b === Math.floor(el.bays / 2);
       s += isDoor
-        ? `<rect x="${x + 18}" y="${y + 10}" width="28" height="${FLOOR - 10}" fill="#16335C"/>`
-        : `<rect x="${x + 12}" y="${y + 10}" width="${BAY - 24}" height="${FLOOR - 20}" fill="#B9C9DE" stroke="#16335C" stroke-width="1.5"/>`;
+        ? `<rect x="${x + 18}" y="${y + 10}" width="28" height="${FLOOR - 10}" fill="#4A6178"/>`
+        : `<rect x="${x + 12}" y="${y + 10}" width="${BAY - 24}" height="${FLOOR - 20}" fill="#E3EAF1" stroke="#4A6178" stroke-width="1.5"/>`;
     }
   }
   for (let b = 0; b <= el.bays; b++) {
     const x = ML + b * BAY;
-    s += `<line x1="${x}" y1="${MT}" x2="${x}" y2="${MT + fh}" stroke="#16335C" stroke-width="${b % el.bays === 0 ? 0 : 1}" stroke-dasharray="4 4"/>`;
-    if (b < el.bays) s += `<text x="${x + BAY / 2}" y="${MT + fh + 22}" text-anchor="middle" font-size="13" font-weight="700" fill="#33415A">${b + 1}</text>`;
+    s += `<line x1="${x}" y1="${MT}" x2="${x}" y2="${MT + fh}" stroke="#4A6178" stroke-width="${b % el.bays === 0 ? 0 : 1}" stroke-dasharray="4 4"/>`;
+    if (b < el.bays) s += `<text x="${x + BAY / 2}" y="${MT + fh + 22}" text-anchor="middle" font-size="13" font-weight="700" fill="#4A6178">${b + 1}</text>`;
   }
-  s += `<line x1="${ML - 30}" y1="${MT + fh}" x2="${ML + fw + 10}" y2="${MT + fh}" stroke="#0B1F3A" stroke-width="3"/>`;
+  s += `<line x1="${ML - 30}" y1="${MT + fh}" x2="${ML + fw + 10}" y2="${MT + fh}" stroke="#183756" stroke-width="3"/>`;
   s += '</svg>';
   return { svg: s, W, H, fx: ML, fy: MT, fw, fh };
 }
@@ -43,10 +43,13 @@ function drawing(el) {
  *  pins: [{id, x, y, status}] existing records (0..1 facade coords)
  *  editable: tap places a pin (with confirm). Otherwise tap selects an existing pin.
  *  value: {x, y} already-confirmed pin
- *  onConfirm({x, y, floor, bay}), onSelect(id)
+ *  image: {url, w, h} uploaded drawing; replaces the generated grid (level/bay then can't be derived)
+ *  onConfirm({x, y, level, bay}), onSelect(id)
  */
-export function mountElevation(host, { el, pins = [], editable = false, value = null, onConfirm, onSelect }) {
-  const d = drawing(el);
+export function mountElevation(host, { el, pins = [], editable = false, value = null, image = null, onConfirm, onSelect }) {
+  const d = image
+    ? { svg: `<img src="${image.url}" width="${image.w}" height="${image.h}" alt="${el.name} elevation drawing" draggable="false">`, W: image.w, H: image.h, fx: 0, fy: 0, fw: image.w, fh: image.h }
+    : drawing(el);
   host.innerHTML = `
     <div class="elev">
       <div class="elev-view ${editable ? '' : 'readonly'}" tabindex="0"
@@ -127,7 +130,7 @@ export function mountElevation(host, { el, pins = [], editable = false, value = 
     let html = '';
     for (const p of pins) {
       const [x, y] = toScreen(p);
-      html += `<div class="pin other ${p.status}${p.id === selected ? ' sel' : ''}" style="left:${x}px;top:${y}px"></div>`;
+      html += `<div class="pin other ${p.qa}${p.id === selected ? ' sel' : ''}" style="left:${x}px;top:${y}px"></div>`;
     }
     if (confirmed && !pending) {
       const [x, y] = toScreen(confirmed);
@@ -140,7 +143,7 @@ export function mountElevation(host, { el, pins = [], editable = false, value = 
     layer.innerHTML = html;
   }
 
-  const where = (p) => `${floorAt(el, p.y)}, bay ${bayAt(el, p.x)}`;
+  const where = (p) => (image ? 'this point' : `${levelAt(el, p.y)} · bay ${bayAt(el, p.x)}`);
 
   function propose(p) {
     pending = p;
@@ -263,7 +266,7 @@ export function mountElevation(host, { el, pins = [], editable = false, value = 
     const c = e.target.closest('[data-c]')?.dataset.c;
     if (c === 'ok' && pending) {
       confirmed = pending;
-      const out = { x: confirmed.x, y: confirmed.y, floor: floorAt(el, confirmed.y), bay: bayAt(el, confirmed.x) };
+      const out = image ? { x: confirmed.x, y: confirmed.y, level: null, bay: null } : { x: confirmed.x, y: confirmed.y, level: levelAt(el, confirmed.y), bay: bayAt(el, confirmed.x) };
       closeConfirm();
       onConfirm?.(out);
     } else if (c === 'cancel') closeConfirm();

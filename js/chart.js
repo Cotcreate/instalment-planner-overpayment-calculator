@@ -59,15 +59,20 @@ export function barChart(host, { data, unit = '', height = 220, label }) {
     t.style.top = `${yy - 8}px`;
   }
 
+  let pointerFocus = false;
   const choose = (e) => {
     const i = e.target.closest('.hit')?.dataset.i;
     if (i == null) return;
+    // A tap focuses then clicks; let the click decide so it doesn't toggle straight off.
+    if (e.type === 'focusin' && pointerFocus) return;
+    if (e.type === 'click') pointerFocus = false;
     if (e.type !== 'click' && sel === +i) return;
     // Touch taps toggle; a mouse click after hover keeps the tooltip.
     sel = sel === +i && e.pointerType !== 'mouse' ? null : +i;
     render();
     if (e.type === 'focusin') host.querySelector(`.hit[data-i="${i}"]`)?.focus();
   };
+  host.addEventListener('pointerdown', () => { pointerFocus = true; });
   host.addEventListener('click', choose);
   host.addEventListener('pointerover', (e) => { if (e.pointerType === 'mouse') choose(e); });
   host.addEventListener('focusin', choose);

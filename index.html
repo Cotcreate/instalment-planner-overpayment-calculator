@@ -3,32 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0B1F3A">
+  <meta name="theme-color" content="#183756">
+  <meta name="description" content="Injectatrace: digital QA and traceability for Injecta Fire Barrier installations.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="InjectaTrace">
-  <title>InjectaTrace</title>
+  <meta name="apple-mobile-web-app-title" content="Injectatrace">
+  <title>Injectatrace</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Source+Code+Pro:wght@500;600&family=Source+Sans+3:wght@300;400;600;700&display=swap">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
-  <header class="topbar">
-    <div class="brand"><img src="icons/icon.svg" alt="" width="32" height="32"><span>InjectaTrace</span></div>
-    <span id="net" class="net" role="status" aria-live="polite"></span>
+  <header class="topbar on-navy" hidden>
+    <a class="brandslot" href="#/" aria-label="Injectatrace home" style="text-decoration:none"></a>
+    <div class="right">
+      <span id="net" class="net" role="status" aria-live="polite"></span>
+      <span class="roletag"></span>
+      <button type="button" class="btn iconbtn" id="signout" aria-label="Sign out"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H3"/></svg></button>
+    </div>
   </header>
 
   <main id="main" tabindex="-1"></main>
 
-  <nav class="bottomnav" aria-label="Main">
-    <a href="#/jobs" data-tab="jobs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V9l9-6 9 6v12h-6v-7H9v7z"/></svg><span>Jobs</span></a>
-    <a href="#/record" data-tab="record"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg><span>Record</span></a>
-    <a href="#/log" data-tab="log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v2H4zm0 6h16v2H4zm0 6h10v2H4z"/></svg><span>Log</span></a>
-    <a href="#/office" data-tab="office"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10h3v10zm6 0V4h3v16zm6 0v-7h3v7z"/></svg><span>Office</span></a>
-  </nav>
+  <nav class="bottomnav" aria-label="Main" hidden></nav>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="js/app.js"></script>
