@@ -1,0 +1,299 @@
+<title>Lidl Receipt Split</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: till-roll column of items, each with a 3-way owner switch; sticky tally bar on top */
+:root {
+  --bg: #eef1f4;
+  --paper: #ffffff;
+  --ink: #1b2430;
+  --muted: #667383;
+  --rule: #d9dfe6;
+  --peter: #2563c9;
+  --peter-soft: #e3ecfb;
+  --jess: #c2410c;
+  --jess-soft: #fbe9df;
+  --both: #0f7a5a;
+  --both-soft: #dcf2ea;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161c; --paper: #1a2129; --ink: #e8edf2; --muted: #93a0ae; --rule: #2c3640;
+  --peter: #7aa7f5; --peter-soft: #1e2d45; --jess: #f59a6b; --jess-soft: #3a2519;
+  --both: #4fcf9e; --both-soft: #173328; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #11161c; --paper: #1a2129; --ink: #e8edf2; --muted: #93a0ae; --rule: #2c3640;
+  --peter: #7aa7f5; --peter-soft: #1e2d45; --jess: #f59a6b; --jess-soft: #3a2519;
+  --both: #4fcf9e; --both-soft: #173328; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.wrap { max-width: 720px; margin: 0 auto; display: grid; gap: 16px; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+header h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); }
+
+.tally {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 14px; display: grid; gap: 12px;
+  box-shadow: 0 6px 20px -12px rgba(0,0,0,.35);
+}
+.tally-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.person { border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+.person.p { background: var(--peter-soft); }
+.person.j { background: var(--jess-soft); }
+.person .label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.person.p .label, .person.p .big { color: var(--peter); }
+.person.j .label, .person.j .big { color: var(--jess); }
+.person .big { font-size: 1.6rem; font-weight: 600; }
+.person .break { font-size: .78rem; color: var(--muted); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .82rem; color: var(--muted); align-items: center; }
+.meta b { color: var(--ink); font-weight: 600; }
+.meta .warn b { color: var(--jess); }
+.meta .ok b { color: var(--both); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn {
+  font: inherit; font-size: .82rem; font-weight: 600; border: 1px solid var(--rule); background: var(--bg);
+  color: var(--ink); border-radius: 8px; padding: 7px 12px; cursor: pointer;
+}
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible, .seg button:focus-visible { outline: 2px solid var(--peter); outline-offset: 2px; }
+
+.receipt { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+.receipt-head {
+  display: flex; justify-content: space-between; gap: 8px; padding: 12px 14px;
+  border-bottom: 1px dashed var(--rule); font-size: .8rem; color: var(--muted);
+}
+ol { list-style: none; margin: 0; padding: 0; }
+li.item {
+  display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 8px 12px; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid var(--rule); border-left: 4px solid transparent;
+  transition: background .15s;
+}
+li.item:last-child { border-bottom: 0; }
+li.item[data-who="p"] { border-left-color: var(--peter); }
+li.item[data-who="j"] { border-left-color: var(--jess); }
+li.item[data-who="b"] { border-left-color: var(--both); }
+.name { min-width: 0; }
+.name .n { font-weight: 500; }
+.name .sub { font-size: .76rem; color: var(--muted); }
+.price { font-size: .95rem; text-align: right; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 9px; padding: 2px; gap: 2px; background: var(--bg); }
+.seg button {
+  font: inherit; font-size: .8rem; font-weight: 600; border: 0; border-radius: 7px; background: transparent;
+  color: var(--muted); padding: 6px 10px; cursor: pointer; min-width: 48px;
+}
+.seg button[aria-pressed="true"][data-v="p"] { background: var(--peter); color: var(--paper); }
+.seg button[aria-pressed="true"][data-v="j"] { background: var(--jess); color: var(--paper); }
+.seg button[aria-pressed="true"][data-v="b"] { background: var(--both); color: var(--paper); }
+.receipt-foot {
+  display: flex; justify-content: space-between; padding: 12px 14px; border-top: 1px dashed var(--rule);
+  font-weight: 700;
+}
+.note { font-size: .78rem; color: var(--muted); }
+.toast { font-size: .8rem; color: var(--both); }
+
+@media (max-width: 520px) {
+  li.item { grid-template-columns: minmax(0,1fr) auto; }
+  .seg { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3,1fr); }
+  .person .big { font-size: 1.35rem; }
+}
+@media (prefers-reduced-motion: reduce) { li.item { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Lidl shop split</h1>
+    <p>Tap who each item is for. Shared items are split 50/50.</p>
+  </header>
+
+  <section class="tally" aria-live="polite">
+    <div class="tally-row">
+      <div class="person p">
+        <span class="label">Peter pays</span>
+        <span class="big num" id="tPeter">£0.00</span>
+        <span class="break num" id="bPeter"></span>
+      </div>
+      <div class="person j">
+        <span class="label">Jess pays</span>
+        <span class="big num" id="tJess">£0.00</span>
+        <span class="break num" id="bJess"></span>
+      </div>
+    </div>
+    <div class="meta">
+      <span>Shared <b class="num" id="tBoth">£0.00</b></span>
+      <span id="unWrap"></span>
+      <span>Receipt <b class="num">£123.22</b></span>
+    </div>
+    <div class="actions">
+      <button class="btn" id="fillBoth" type="button">Set unassigned to shared</button>
+      <button class="btn" id="copy" type="button">Copy summary</button>
+      <button class="btn" id="reset" type="button">Clear all</button>
+      <span class="toast" id="toast" hidden></span>
+    </div>
+  </section>
+
+  <section class="receipt">
+    <div class="receipt-head"><span>Lidl Alfreton</span><span class="num">12/10/26 · 19:24</span></div>
+    <ol id="list"></ol>
+    <div class="receipt-foot"><span>TOTAL</span><span class="num">£123.22</span></div>
+  </section>
+
+  <p class="note">Your choices are saved in this browser. Where a shared total has an odd penny, Peter's half is rounded up and Jess's down so the two always add up to the receipt.</p>
+</div>
+
+<script>
+const ITEMS = [
+  ["Wodka 37.5%", 1679],
+  ["Coca-Cola Diet 2L", 225],
+  ["Plain Flour", 70],
+  ["Straight Cut Oven Chips", 165],
+  ["Dark Chocolate Chips", 119],
+  ["Milk Chocolate Chips", 119],
+  ["Granulated Sugar", 109],
+  ["Large White Baps", 69],
+  ["Spaghetti", 140, "5 × £0.28"],
+  ["20 Thick Frozen", 259, "£2.69 less £0.10 price cut"],
+  ["Family Lasagne", 459],
+  ["Beef Burgers", 239],
+  ["Pork Schnitzel", 399],
+  ["Kitchen Towel 1pk", 115],
+  ["Custard Creams", 45],
+  ["Milk Chocolate", 99],
+  ["Salami Slices", 199],
+  ["Men's Quarter Zip (Navy)", 999],
+  ["Milk Choco Digestive", 99],
+  ["Swing Bin Liner: Drawstring", 145],
+  ["Bourbon Creams", 43],
+  ["Colgate Advanced Toothbrush", 145],
+  ["Curry Bockwurst", 537, "3 × £1.79"],
+  ["Fusilli", 345],
+  ["Thüringer Roast Sausage", 698, "2 × £3.49"],
+  ["Starbucks Latte Iced Coffee", 249],
+  ["British Soured Cream", 85],
+  ["Curry Bratwurst", 358, "2 × £1.79"],
+  ["Crusty Rye Bloomer", 199],
+  ["Basic Tealights", 189],
+  ["Chicken Dippers", 165],
+  ["HS Water 1.5L", 115],
+  ["Men's Quarter Zip (Olive)", 999],
+  ["Small Candle Sea Salt", 95],
+  ["Kitchen Towel 4pk", 175],
+  ["Platinum Bleach", 158, "2 × £0.79"],
+  ["Large Dome Candle Cotton", 299],
+  ["British Unsalted Butter", 185],
+  ["Soy Sauce Light", 55],
+  ["Hovis Medium White Loaf", 125],
+  ["Cadbury Twirl 9 Pack", 249],
+  ["Garlic & Herb", 275],
+  ["Small Candle Lavender", 95],
+  ["Thick Bleach Citrus", 69],
+  ["Knorr Aromat Original", 169],
+  ["Reed Diffuser Sea Salt", 199],
+  ["AA Batteries", 295],
+];
+const KEY = "lidl-split-2026-10-12";
+const LABEL = { p: "Peter", j: "Jess", b: "Both" };
+let state = {};
+try { state = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { state = {}; }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+const gbp = p => (p < 0 ? "-" : "") + "£" + (Math.abs(p) / 100).toFixed(2);
+const $ = id => document.getElementById(id);
+
+const list = $("list");
+ITEMS.forEach(([name, pence, sub], i) => {
+  const li = document.createElement("li");
+  li.className = "item";
+  li.innerHTML = `
+    <div class="name"><div class="n"></div>${sub ? '<div class="sub num"></div>' : ""}</div>
+    <div class="price num">${gbp(pence)}</div>
+    <div class="seg" role="group">
+      <button type="button" data-v="p">Peter</button>
+      <button type="button" data-v="j">Jess</button>
+      <button type="button" data-v="b">Both</button>
+    </div>`;
+  li.querySelector(".n").textContent = name;
+  if (sub) li.querySelector(".sub").textContent = sub;
+  li.querySelector(".seg").setAttribute("aria-label", "Who pays for " + name);
+  li.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
+    state[i] = state[i] === b.dataset.v ? undefined : b.dataset.v;  // tap again to unassign
+    if (!state[i]) delete state[i];
+    save(); render();
+  }));
+  list.appendChild(li);
+});
+
+function totals() {
+  let p = 0, j = 0, b = 0, un = 0, nUn = 0;
+  ITEMS.forEach(([, pence], i) => {
+    const w = state[i];
+    if (w === "p") p += pence; else if (w === "j") j += pence; else if (w === "b") b += pence;
+    else { un += pence; nUn++; }
+  });
+  const pHalf = Math.ceil(b / 2), jHalf = b - pHalf;
+  return { p, j, b, un, nUn, pHalf, jHalf, peter: p + pHalf, jess: j + jHalf };
+}
+
+function render() {
+  [...list.children].forEach((li, i) => {
+    const w = state[i] || "";
+    li.dataset.who = w;
+    li.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === w)));
+  });
+  const t = totals();
+  $("tPeter").textContent = gbp(t.peter);
+  $("tJess").textContent = gbp(t.jess);
+  $("bPeter").textContent = `${gbp(t.p)} own + ${gbp(t.pHalf)} half shared`;
+  $("bJess").textContent = `${gbp(t.j)} own + ${gbp(t.jHalf)} half shared`;
+  $("tBoth").textContent = gbp(t.b);
+  $("unWrap").className = t.nUn ? "warn" : "ok";
+  $("unWrap").innerHTML = t.nUn
+    ? `Not yet assigned <b class="num">${gbp(t.un)}</b> (${t.nUn} item${t.nUn === 1 ? "" : "s"})`
+    : "All items assigned <b>✓</b>";
+}
+
+$("fillBoth").addEventListener("click", () => {
+  ITEMS.forEach((_, i) => { if (!state[i]) state[i] = "b"; });
+  save(); render();
+});
+let armed = false;
+$("reset").addEventListener("click", e => {
+  if (!armed) { armed = true; e.target.textContent = "Tap again to clear"; setTimeout(() => { armed = false; e.target.textContent = "Clear all"; }, 2500); return; }
+  armed = false; e.target.textContent = "Clear all";
+  state = {}; save(); render();
+});
+
+function summary() {
+  const t = totals();
+  const line = w => ITEMS.map(([n, pence], i) => state[i] === w ? `  ${n} ${gbp(pence)}` : null).filter(Boolean).join("\n") || "  (none)";
+  return `Lidl Alfreton 12/10/26 — £123.22
+Peter pays ${gbp(t.peter)} (${gbp(t.p)} own + ${gbp(t.pHalf)} shared)
+Jess pays ${gbp(t.jess)} (${gbp(t.j)} own + ${gbp(t.jHalf)} shared)
+${t.nUn ? `Unassigned: ${gbp(t.un)} (${t.nUn} items)\n` : ""}
+Peter:\n${line("p")}\n\nJess:\n${line("j")}\n\nShared (${gbp(t.b)}):\n${line("b")}`;
+}
+$("copy").addEventListener("click", () => {
+  const text = summary();
+  const done = msg => { const el = $("toast"); el.textContent = msg; el.hidden = false; setTimeout(() => el.hidden = true, 2200); };
+  try {
+    navigator.clipboard.writeText(text).then(() => done("Copied"), () => fallback(text, done));
+  } catch (e) { fallback(text, done); }
+});
+function fallback(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove(); done(ok ? "Copied" : "Copy not available here");
+}
+
+render();
+</script>
