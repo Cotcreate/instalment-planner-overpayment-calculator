@@ -2,7 +2,7 @@
 // Records live in localStorage, files (photos, video, documents) in IndexedDB via files.js.
 // Swap load()/persist() for an API sync layer when the backend exists.
 
-const KEY = 'injectatrace.v3';
+const KEY = 'injectatrace.v4';
 const DAY = 86400000;
 
 // Placeholder contractor logo. The contractor uploads their own under More → Branding.
@@ -338,11 +338,22 @@ function seed() {
   const pins = [];
   const counts = { s1: 64, s2: 30, s3: 30 };
   for (const st of sites) {
-    for (let i = 0; i < counts[st.id]; i++) {
-      const el = pick(st.elevations);
-      const x = 0.06 + rnd() * 0.88, y = 0.06 + rnd() * 0.88;
+    // Cavity barriers run along each floor's slab line. Work goes floor by floor, bottom up,
+    // round each face left to right, so hold point numbers follow the installation order.
+    const slots = [];
+    const maxFloors = Math.max(...st.elevations.map((e) => e.floors));
+    for (let f = 1; f < maxFloors; f++) {
+      for (const el of st.elevations) {
+        if (f >= el.floors) continue;
+        for (let b = 0; b < el.bays; b++) slots.push({ el, x: (b + 0.5) / el.bays, y: 1 - f / el.floors - 0.004 });
+      }
+    }
+    const n = counts[st.id];
+    for (let i = 0; i < n; i++) {
+      const { el, x, y } = slots[i % slots.length];
       const abutted = rnd() < 0.2;
-      const age = st.status === 'complete' ? 40 + rnd() * 40 : rnd() * 49;
+      const span = st.status === 'complete' ? [80, 40] : [49, 0];
+      const age = span[0] - (i / n) * (span[0] - span[1]) + rnd() * 0.6;
       const qaRoll = rnd();
       const qa = st.status === 'complete' || age > 10 ? (qaRoll < 0.92 ? 'approved' : 'rejected') : qaRoll < 0.55 ? 'approved' : qaRoll < 0.9 ? 'pending' : 'rejected';
       const photos = {};

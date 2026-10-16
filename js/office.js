@@ -8,6 +8,9 @@ import {
 } from './ui.js';
 import { jobRow } from './home.js';
 import { quoteRow } from './quotes.js';
+import { pinRow, pinBrowser } from './pinlist.js';
+
+export { pinRow };
 
 const staff = (ctx) => ctx.sess.role === 'manager' || ctx.sess.role === 'office';
 
@@ -22,19 +25,6 @@ const uploadIcon = (attrs, label) =>
   `<label class="capture"><input type="file" accept="application/pdf,image/*" ${attrs} aria-label="${esc(label)}"><span class="btn iconbtn">${I.upload}</span></label>`;
 const uploadBtn = (attrs, label = 'Upload', accept = 'application/pdf,image/*') =>
   `<label class="capture"><input type="file" accept="${accept}" ${attrs} aria-label="${esc(label)}"><span class="btn sm">${I.upload}${esc(label)}</span></label>`;
-
-export function pinRow(p, { showSite = false } = {}) {
-  const st = db.site(p.siteId);
-  const el = db.elevation(st, p.elevationId);
-  const gaps = db.photoGaps(p).length;
-  return rowItem({
-    href: `#/pin/${p.id}`,
-    lead: iconBubble(I.capture, p.qa === 'approved' ? 'green' : 'red'),
-    title: `<span class="mono">${db.pinLabel(p)}</span> · ${esc(el?.name)} · ${esc(p.level)}`,
-    sub: `${showSite ? `${esc(st.name)} · ` : ''}${num(p.length)} m · ${p.socks.map((s) => `${s}mm`).join('+')}${gaps ? ` · <span style="color:var(--red);font-weight:700">${gaps} photo gap${gaps > 1 ? 's' : ''}</span>` : ` · ${ago(p.createdAt)}`}`,
-    trail: qaChip(p.qa),
-  });
-}
 
 // ---------- Jobs ----------
 export function viewJobs(ctx, params) {
@@ -129,14 +119,21 @@ async function jobOverview(ctx, st, host) {
   const isStaff = staff(ctx);
   const key = `injectatrace.elev.${st.id}`;
   const el = db.elevation(st, readJSON(key, st.elevations[0].id)) || st.elevations[0];
-  const pins = db.pinsFor(st.id).filter((p) => p.elevationId === el.id);
+  const allPins = db.pinsFor(st.id).filter((p) => p.elevationId === el.id);
+  const view = { show: 'all', labels: false, ...readJSON('injectatrace.drawview', {}) };
+  const visible = () => allPins.filter((p) => view.show === 'all' || (view.show === 'green') === (p.qa === 'approved'));
+  const pins = visible();
   const q = st.quoteId ? db.quote(st.quoteId) : null;
   host.innerHTML = `
     <div class="twocol">
       <div>
         ${st.elevations.length > 1 ? `<div class="seg" role="group" aria-label="Elevation">${st.elevations.map((e) => `<button type="button" data-el="${e.id}" aria-pressed="${e.id === el.id}">${esc(e.name)}</button>`).join('')}</div>` : `<p class="eyebrow">${esc(el.name)} elevation</p>`}
         <div id="elev"></div>
-        <div class="legend"><span><span class="dot" style="color:var(--red)"></span>Awaiting QA / rework</span><span><span class="dot" style="color:var(--green)"></span>QA passed</span><span class="muted">${pins.length} on ${esc(el.name)}</span></div>
+        <div class="drawopts">
+          <div class="seg" role="group" aria-label="Pins to show" style="margin:0;flex:1">${[['all', `All <span class="n">${allPins.length}</span>`], ['red', `<span class="dot" style="color:var(--red)"></span>Red <span class="n">${allPins.filter((p) => p.qa !== 'approved').length}</span>`], ['green', `<span class="dot" style="color:var(--green)"></span>Green <span class="n">${allPins.filter((p) => p.qa === 'approved').length}</span>`]].map(([k, l]) => `<button type="button" data-show="${k}" aria-pressed="${view.show === k}">${l}</button>`).join('')}</div>
+          <label class="toggle" style="flex:1 1 100%;gap:10px"><span>Show hold point numbers</span><input type="checkbox" id="lbl" ${view.labels ? 'checked' : ''}></label>
+        </div>
+        <p class="legend" style="margin-top:6px"><span><span class="dot" style="color:var(--red)"></span>Awaiting QA or rework</span><span><span class="dot" style="color:var(--green)"></span>QA passed</span><a href="#/jobs/${st.id}/pins" style="margin-left:auto">List view</a></p>
         <div id="picked" aria-live="polite" style="margin-top:12px"></div>
       </div>
       <div>
@@ -170,23 +167,25 @@ async function jobOverview(ctx, st, host) {
 
   const image = el.image ? await fileURL(el.image.id).then((u) => (u ? { url: u, w: el.image.w, h: el.image.h } : null)) : null;
   const m = mountElevation(host.querySelector('#elev'), {
-    el, pins, image,
+    el, pins, image, labels: view.labels,
     onSelect: (pid) => {
-      const p = pins.find((x) => x.id === pid);
+      const p = allPins.find((x) => x.id === pid);
       host.querySelector('#picked').innerHTML = p ? `<div class="group">${pinRow(p)}</div>` : '';
     },
   });
   ctx.cleanups.push(m.destroy);
+
+  const saveView = () => writeJSON('injectatrace.drawview', view);
+  host.querySelectorAll('[data-show]').forEach((b) => b.addEventListener('click', () => {
+    view.show = b.dataset.show; saveView();
+    host.querySelectorAll('[data-show]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    m.update({ pins: visible() });
+  }));
+  host.querySelector('#lbl').addEventListener('change', (e) => { view.labels = e.target.checked; saveView(); m.update({ labels: view.labels }); });
 }
 
-function jobPins(ctx, st, host, params) {
-  const f = params?.get('f') || 'all';
-  const all = db.pinsFor(st.id).sort((a, b) => b.createdAt - a.createdAt);
-  const n = (k) => all.filter((p) => k === 'all' || p.qa === k).length;
-  const list = all.filter((p) => f === 'all' || p.qa === f);
-  host.innerHTML = `
-    <div class="seg" style="background:none;padding:0;gap:8px">${[['all', 'All'], ['pending', 'Awaiting QA'], ['rejected', 'Rework'], ['approved', 'Passed']].map(([k, l]) => `<a href="#/jobs/${st.id}/pins?f=${k}" ${k === f ? 'aria-current="page"' : ''} style="border:1px solid var(--line);background:${k === f ? 'var(--navy)' : 'var(--white)'};color:${k === f ? '#fff' : 'var(--slate)'};flex:0 0 auto">${l} <span class="n" style="color:inherit">${n(k)}</span></a>`).join('')}</div>
-    <div class="group">${list.slice(0, 60).map((p) => pinRow(p)).join('') || '<div class="empty">None.</div>'}</div>`;
+function jobPins(ctx, st, host) {
+  pinBrowser(host, { pins: db.pinsFor(st.id), key: st.id });
 }
 
 function jobDaily(ctx, st, host) {

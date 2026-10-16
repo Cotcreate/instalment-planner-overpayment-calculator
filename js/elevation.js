@@ -46,7 +46,7 @@ function drawing(el) {
  *  image: {url, w, h} uploaded drawing; replaces the generated grid (level/bay then can't be derived)
  *  onConfirm({x, y, level, bay}), onSelect(id)
  */
-export function mountElevation(host, { el, pins = [], editable = false, value = null, image = null, onConfirm, onSelect }) {
+export function mountElevation(host, { el, pins = [], editable = false, value = null, image = null, labels = false, onConfirm, onSelect }) {
   const d = image
     ? { svg: `<img src="${image.url}" width="${image.w}" height="${image.h}" alt="${el.name} elevation drawing" draggable="false">`, W: image.w, H: image.h, fx: 0, fy: 0, fw: image.w, fh: image.h }
     : drawing(el);
@@ -131,6 +131,7 @@ export function mountElevation(host, { el, pins = [], editable = false, value = 
     for (const p of pins) {
       const [x, y] = toScreen(p);
       html += `<div class="pin other ${p.qa}${p.id === selected ? ' sel' : ''}" style="left:${x}px;top:${y}px"></div>`;
+      if (labels && p.no != null) html += `<span class="plabel ${p.qa}" style="left:${x}px;top:${y}px">${p.no}</span>`;
     }
     if (confirmed && !pending) {
       const [x, y] = toScreen(confirmed);
@@ -278,5 +279,10 @@ export function mountElevation(host, { el, pins = [], editable = false, value = 
   return {
     destroy: () => ro.disconnect(),
     select(id) { selected = id; drawPins(); },
+    update(next) {
+      if (next.pins) { pins = next.pins; if (!pins.some((p) => p.id === selected)) selected = null; }
+      if ('labels' in next) labels = next.labels;
+      drawPins();
+    },
   };
 }

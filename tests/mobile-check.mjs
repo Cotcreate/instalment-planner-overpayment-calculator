@@ -19,7 +19,7 @@ const VIEWPORTS = [
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64');
 const failures = [];
 const fail = (m) => { failures.push(m); console.log('  FAIL', m); };
-const state = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v3')));
+const state = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v4')));
 
 async function audit(page, vp, label) {
   await page.waitForTimeout(150);
@@ -153,12 +153,47 @@ async function run(browser, vp) {
     await page.waitForTimeout(150);
     await audit(page, vp, `12-job-${t}`);
   }
+  // Hold point browser: sort, group, filter, search
+  await go('jobs/s1/pins', '.pinbar');
+  await tap(page.locator('#popts'));
+  await sheetOpen();
+  await audit(page, vp, '12b-pin-sort-filter');
+  await tap(page.locator('.sheet label.choice:has(input[name=sort][value=no])'));
+  await tap(page.locator('.sheet label.choice:has(input[name=group][value=level])'));
+  await tap(page.locator('.sheet label.choice:has(input[name=status][value=approved])'));
+  await tap(page.locator('.sheet [data-primary]'));
+  await sheetClosed();
+  const groups = await page.$$eval('.pgh > span:first-child', (h) => h.map((x) => x.textContent));
+  const lv = (l) => (l === 'Ground' ? 0 : +l.replace(/\D/g, ''));
+  if (groups.some((g, i) => i && lv(g) > lv(groups[i - 1]))) fail(`[${vp.name}] level groups not top-down: ${groups.join(',')}`);
+  const firstGroup = await page.$$eval('.group:first-of-type .ri-title .mono, .pinbar ~ .group .ri-title .mono', (t) => t.slice(0, 8).map((x) => +x.textContent.replace(/\D/g, '')));
+  if (firstGroup.some((n, i) => i && n < firstGroup[i - 1])) fail(`[${vp.name}] hold points not sorted by number within group`);
+  if (await page.locator('.pinbar ~ .group .chip.c-red').count()) fail(`[${vp.name}] status filter let red pins through`);
+  await audit(page, vp, '12c-pins-grouped');
+  await page.locator('#pq').fill('12');
+  await page.waitForTimeout(100);
+  const hits = await page.$$eval('.ri-title .mono', (t) => t.map((x) => x.textContent));
+  if (!hits.length || hits.some((h) => !h.includes('12'))) fail(`[${vp.name}] HP search wrong: ${hits.join(',')}`);
+  await page.locator('#pq').fill('');
+  await tap(page.locator('#pclear'));
+
+  // Drawing display options
+  await go('jobs/s1/overview', '.drawopts');
+  await page.waitForTimeout(200);
+  await tap(page.locator('[data-show=red]'));
+  if (await page.locator('.elev-pins .pin.approved').count()) fail(`[${vp.name}] red filter still shows green pins`);
+  await tap(page.locator('.drawopts label.toggle'));
+  if (!(await page.locator('.plabel').count())) fail(`[${vp.name}] HP number labels not shown`);
+  await audit(page, vp, '12d-drawing-options');
+  await tap(page.locator('[data-show=all]'));
+  await tap(page.locator('.drawopts label.toggle'));
+
   await go('company?t=insurance', '.seg');
   await audit(page, vp, '13-compliance');
 
   // ===== Client: accepts the quote in their portal =====
   // Castlefield has no demo login, so hand the quote to Northgate for the portal test.
-  await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('injectatrace.v3')); s.quotes.find((q) => q.id === id).clientId = 'c1'; localStorage.setItem('injectatrace.v3', JSON.stringify(s)); }, quote.id);
+  await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('injectatrace.v4')); s.quotes.find((q) => q.id === id).clientId = 'c1'; localStorage.setItem('injectatrace.v4', JSON.stringify(s)); }, quote.id);
   await signIn('client');
   await page.waitForSelector('.hero');
   await audit(page, vp, '14-client-home');
@@ -261,7 +296,7 @@ async function run(browser, vp) {
   await tap(page.locator('.sheet [data-primary]'));
   await sheetClosed();
   if (!(await state(page)).days.find((d) => d.siteId === 's1' && d.date === new Date().toISOString().slice(0, 10))?.am) fail(`[${vp.name}] AM temps not saved`);
-  await go('records', '.seg');
+  await go('records', '.pinbar');
   await audit(page, vp, '23-records');
 
   // ===== Back office: QA the new hold point =====

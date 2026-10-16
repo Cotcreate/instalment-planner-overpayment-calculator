@@ -6,7 +6,7 @@ import {
   esc, uid, num, I, time, ago, trail, toast, setAction, openSheet, qaChip, stepper, wireSteppers,
   locate, gpsText, signaturePad, wordmark, tile, rowItem, iconBubble, sectionHead, readJSON, writeJSON,
 } from './ui.js';
-import { pinRow } from './office.js';
+import { pinBrowser } from './pinlist.js';
 
 const STEPS = ['Location', 'Pin', 'Measurements', 'Photos', 'Check'];
 
@@ -530,16 +530,14 @@ function dailySheet(ctx, st, which) {
 }
 
 // ---------- Records ----------
-export function viewRecords(ctx, params) {
+export function viewRecords(ctx) {
   const { main, sess } = ctx;
-  const f = params.get('f') || 'all';
-  const mine = db.S().pins.filter((p) => p.operative === sess.operativeId).sort((a, b) => b.createdAt - a.createdAt);
-  const n = (k) => mine.filter((p) => k === 'all' || p.qa === k).length;
-  const list = mine.filter((p) => f === 'all' || p.qa === f).slice(0, 80);
+  const mine = db.S().pins.filter((p) => p.operative === sess.operativeId);
+  const rework = mine.filter((p) => p.qa === 'rejected').length;
   main.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Your hold points</p><h1>Records</h1></div></div>
-    <nav class="seg" aria-label="Filter">${[['all', 'All'], ['rejected', 'Rework'], ['pending', 'In QA'], ['approved', 'Passed']].map(([k, l]) => `<a href="#/records?f=${k}" ${k === f ? 'aria-current="page"' : ''}>${l} <span class="n" style="${k === 'rejected' && n(k) ? 'color:var(--red)' : ''}">${n(k)}</span></a>`).join('')}</nav>
-    ${f === 'rejected' && list.length ? '<p class="muted small">Tap one to see what QA asked for, add photos and resubmit.</p>' : ''}
-    <div class="group">${list.map((p) => pinRow(p, { showSite: true })).join('') || '<div class="empty">Nothing here.</div>'}</div>`;
+    ${rework ? `<p class="muted small">${rework} need rework. Open one to see what QA asked for, add photos and resubmit.</p>` : ''}
+    <div id="list"></div>`;
+  pinBrowser(main.querySelector('#list'), { pins: mine, key: 'mine', showSite: true, installers: false, defaults: { group: 'status', sort: 'newest' } });
   setAction(main, null);
 }

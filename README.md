@@ -71,6 +71,7 @@ js/admin.js           More hub, client setup / portal access, branding
 js/installer.js       Projects, Capture (hold point), Daily, Records, RAMS signing
 js/office.js          Jobs (+ job tabs incl. team assignment), QA queue, Team & compliance
 js/pin.js             hold point detail with QA / rework / resubmit
+js/pinlist.js         hold point list: search by HP no., sort, group and filter
 js/elevation.js       zoom/pan/pin drawing (generated grid or uploaded drawing)
 js/chart.js           responsive bar chart
 js/store.js           data model, demo seed, derived figures (swap for an API)

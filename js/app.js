@@ -98,6 +98,9 @@ function render() {
   cleanups.forEach((fn) => fn());
   cleanups = [];
   document.getElementById('toast').classList.remove('show');
+  // A sheet left open (e.g. phone back button) must not survive navigation.
+  document.querySelectorAll('.sheet, .sheet-backdrop').forEach((x) => x.remove());
+  document.body.style.overflow = '';
   const sess = db.session();
   const r = route();
   if (!sess || !NAV[sess.role]) return signIn();
