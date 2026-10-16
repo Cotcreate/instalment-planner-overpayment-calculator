@@ -2,10 +2,20 @@
 // Records live in localStorage, files (photos, video, documents) in IndexedDB via files.js.
 // Swap load()/persist() for an API sync layer when the backend exists.
 
-const KEY = 'injectatrace.v4';
+const KEY = 'injectatrace.v5';
 const DAY = 86400000;
 
 // Placeholder contractor logo. The contractor uploads their own under More → Branding.
+export const INJECTACLAD_LOGO = 'icons/logo-injectaclad.png';
+export const IFB_LOGO = 'icons/logo-injecta-fire-barrier.png';
+const svgLogo = (svg) => 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+// Placeholder logos for the demo installer and contractor companies; each uploads its own.
+const SEED_LOGOS = {
+  i1: svgLogo('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64"><path d="M6 54 30 10l24 44z" fill="#0E7C86"/><path d="M22 54 36 30l14 24z" fill="#5FC4C9"/><text x="64" y="38" font-family="Arial Black, Arial, sans-serif" font-size="28" font-weight="900" fill="#0E3B43">APEX</text><text x="65" y="55" font-family="Arial, sans-serif" font-size="11" letter-spacing="2.4" fill="#0E7C86">CAVITY SOLUTIONS</text></svg>'),
+  i2: svgLogo('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 64"><path d="M30 4 54 12v20c0 14-10 24-24 28C16 56 6 46 6 32V12z" fill="#B3261E"/><path d="M30 16c4 8 12 10 12 19a12 12 0 0 1-24 0c0-6 4-9 7-12 0 5 2 7 4 8-1-6 0-10 1-15z" fill="#FFD7A8"/><text x="64" y="36" font-family="Georgia, serif" font-size="26" font-weight="700" fill="#3B0D0A">Pennine</text><text x="65" y="54" font-family="Arial, sans-serif" font-size="11" letter-spacing="2.6" fill="#B3261E">FIRE PROTECTION</text></svg>'),
+  i3: svgLogo('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 64"><rect x="6" y="8" width="48" height="48" rx="24" fill="#4B3B8F"/><path d="M22 20h8v10l10-10h10L37 33l13 11H39l-9-8v8h-8z" fill="#fff"/><text x="64" y="36" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#2A1F5C">Keystone</text><text x="65" y="54" font-family="Arial, sans-serif" font-size="11" letter-spacing="2.6" fill="#4B3B8F">PASSIVE FIRE</text></svg>'),
+  k2: svgLogo('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 64"><rect x="6" y="10" width="44" height="44" fill="#7A4A12"/><path d="M6 10h11v8H6zm16 0h12v8H22zm17 0h11v8H39z" fill="#F2C38A"/><text x="60" y="36" font-family="Georgia, serif" font-size="25" font-weight="700" fill="#3D2408">Castlegate</text><text x="61" y="54" font-family="Arial, sans-serif" font-size="11" letter-spacing="3.2" fill="#7A4A12">CLADDING</text></svg>'),
+};
 const DEFAULT_LOGO = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 64"><rect x="2" y="6" width="52" height="52" rx="10" fill="#0F5C4C"/><path d="M14 46V18h6l14 18V18h6v28h-6L20 28v18z" fill="#fff"/><text x="68" y="34" font-family="Georgia, serif" font-size="25" font-weight="700" fill="#0F5C4C">Northern</text><text x="69" y="54" font-family="Arial, sans-serif" font-size="12.5" letter-spacing="4.6" fill="#3E6F64">FACADES LTD</text></svg>');
 
 // ---------- Geometry ----------
@@ -30,13 +40,27 @@ export const dayFor = (siteId, date = today()) => state.days.find((d) => d.siteI
 export function sitesFor(sess) {
   if (sess?.role === 'installer') return state.sites.filter((x) => x.team.includes(sess.operativeId) && x.status !== 'complete');
   if (sess?.role === 'client') return state.sites.filter((x) => x.clientId === sess.clientId);
+  if (sess?.role === 'manager') return state.sites.filter((x) => x.contractorId === sess.companyId);
   return state.sites;
+}
+export const companyOf = (id) => state.companies.find((c) => c.id === id);
+export const companiesOf = (type) => state.companies.filter((c) => c.type === type);
+export const jobInstaller = (st) => companyOf(st?.installerCoId);
+// The logo and name each portal shows in its top bar.
+export function brandFor(sess) {
+  if (sess?.role === 'office') return { name: 'Injectaclad', logo: INJECTACLAD_LOGO };
+  if (sess?.role === 'installer') return { name: 'Injecta Fire Barrier', logo: IFB_LOGO };
+  if (sess?.role === 'manager') { const c = companyOf(sess.companyId); return { name: c.name, logo: c.logo }; }
+  const st = state.sites.find((x) => x.clientId === sess?.clientId);
+  const c = companyOf(st?.contractorId) || companyOf('k1');
+  return { name: c.name, logo: c.logo };
 }
 export const client = (id) => state.clients.find((c) => c.id === id);
 export const clientName = (st) => client(st?.clientId)?.name || '—';
 export const quote = (id) => state.quotes.find((q) => q.id === id);
 export function quotesFor(sess) {
   if (sess?.role === 'client') return state.quotes.filter((q) => q.clientId === sess.clientId && q.status !== 'draft');
+  if (sess?.role === 'manager') return state.quotes.filter((q) => q.contractorId === sess.companyId);
   return state.quotes;
 }
 export function quoteTotals(q) {
@@ -60,10 +84,10 @@ export function sweepQuotes() {
   if (changed) persist();
 }
 
-export function createJob({ name, address = '', clientId, fireRating = 60, targetPins = 60, elevations = ['North'], team = [], quoteId = null, files = [] }) {
+export function createJob({ name, address = '', clientId, contractorId = null, installerCoId = null, fireRating = 60, targetPins = 60, elevations = ['North'], team = [], quoteId = null, files = [] }) {
   const id = `j${Date.now().toString(36)}`;
   const st = {
-    id, name, clientId, address, status: 'active', fireRating, targetPins, team, quoteId,
+    id, name, clientId, contractorId, installerCoId, address, status: 'active', fireRating, targetPins, team, quoteId,
     elevations: elevations.map((n, i) => ({ id: `${id}e${i}`, name: n, floors: 8, bays: 6 })),
     docs: Object.fromEntries(SITE_DOCS.map((d) => [d.key, []])),
     rams: { rev: 'A', signatures: [] },
@@ -262,7 +286,9 @@ function seed() {
     { id: 'o2', name: 'Sam Okafor', role: 'Installer', rate: 24, email: 'sam@installer.co.uk' },
     { id: 'o3', name: 'Marie Byrne', role: 'Supervisor', rate: 29, email: 'marie@installer.co.uk' },
     { id: 'o4', name: 'Luka Novak', role: 'Installer', rate: 22, email: 'luka@installer.co.uk' },
+    { id: 'o5', name: 'Kerry Walsh', role: 'Supervisor', rate: 28, email: 'kerry@installer.co.uk' },
   ].map((o, i) => ({
+    companyId: ['o4', 'o5'].includes(o.id) ? 'i2' : 'i1',
     ...o,
     quals: [
       { id: `q${i}a`, name: 'Injecta Fire Barrier installer training', expiry: inDays(i === 3 ? 18 : 240 + i * 30), file: null },
@@ -297,7 +323,7 @@ function seed() {
   const sites = [
     {
       id: 's1', name: 'Harbour View Tower', clientId: 'c1', address: 'Wellington Street, Leeds LS1', status: 'active',
-      fireRating: 60, targetPins: 120, team: ['o1', 'o2', 'o3'],
+      fireRating: 60, targetPins: 120, team: ['o1', 'o2', 'o3'], contractorId: 'k1', installerCoId: 'i1',
       elevations: [
         { id: 's1n', name: 'North', floors: 12, bays: 8 },
         { id: 's1e', name: 'East', floors: 12, bays: 5 },
@@ -306,7 +332,7 @@ function seed() {
     },
     {
       id: 's2', name: 'Riverside Library', clientId: 'c2', address: 'Museum Street, York YO1', status: 'active',
-      fireRating: 90, targetPins: 48, team: ['o1', 'o4'],
+      fireRating: 90, targetPins: 48, team: ['o4', 'o5'], contractorId: 'k1', installerCoId: 'i2',
       elevations: [
         { id: 's2w', name: 'West', floors: 4, bays: 10 },
         { id: 's2e', name: 'East', floors: 4, bays: 10 },
@@ -314,7 +340,7 @@ function seed() {
     },
     {
       id: 's3', name: 'Kingsway Student Block', clientId: 'c3', address: 'Hulme, Manchester M15', status: 'complete',
-      fireRating: 120, targetPins: 30, team: ['o2', 'o3', 'o4'],
+      fireRating: 120, targetPins: 30, team: ['o2', 'o3'], contractorId: 'k2', installerCoId: 'i1',
       elevations: [{ id: 's3n', name: 'North', floors: 8, bays: 6 }],
     },
   ];
@@ -429,32 +455,41 @@ function seed() {
       notes: 'Price based on drawings supplied. Assumes clear access to cavities and working hours 08:00–17:00 Mon–Fri.',
       files: [{ id: null, name: 'Elevations rev B.pdf', size: 2400000, type: 'application/pdf', at: created }, ...(rnd() < 0.5 ? [{ id: null, name: 'Cavity section.dwg.pdf', size: 860000, type: 'application/pdf', at: created }] : [])],
       lostReason: status === 'declined' ? pick(LOST_REASONS.slice(0, 4)) : '', owner: rnd() < 0.6 ? 'Dan Whitaker' : 'Gemma Hart', jobId: null,
+      contractorId: rnd() < 0.7 ? 'k1' : 'k2', installerCoId: pick(['i1', 'i2', 'i3']),
     });
   }
   // The three jobs on the system were won from quotes.
   [['s1', 'c1', 'Harbour View Tower', 'Wellington Street, Leeds LS1', 1450], ['s2', 'c2', 'Riverside Library', 'Museum Street, York YO1', 520], ['s3', 'c3', 'Kingsway Student Block', 'Hulme, Manchester M15', 380]].forEach(([sid, cid, title, address, lm], k) => {
     const q = quotes[3 + k * 4];
-    Object.assign(q, { clientId: cid, title, address, contact: clients.find((c) => c.id === cid).contacts[0].name, status: 'accepted', lostReason: '', jobId: sid, lines: mkLines(lm) });
+    const job = sites.find((x) => x.id === sid);
+    Object.assign(q, { clientId: cid, title, address, contact: clients.find((c) => c.id === cid).contacts[0].name, status: 'accepted', lostReason: '', jobId: sid, lines: mkLines(lm), contractorId: job.contractorId, installerCoId: job.installerCoId });
     q.decidedAt ||= q.createdAt + 14 * DAY;
     sites.find((x) => x.id === sid).quoteId = q.id;
   });
   // A couple of live quotes for the demo client to act on in their portal.
   const q1 = quotes[quotes.length - 2];
-  Object.assign(q1, { clientId: 'c1', contact: 'Priya Shah', title: 'Harbour View Tower, phase 2 (West)', status: 'sent', decidedAt: null, lostReason: '', sentAt: now - 2 * DAY, createdAt: now - 4 * DAY });
+  Object.assign(q1, { contractorId: 'k1', installerCoId: 'i1', clientId: 'c1', contact: 'Priya Shah', title: 'Harbour View Tower, phase 2 (West)', status: 'sent', decidedAt: null, lostReason: '', sentAt: now - 2 * DAY, createdAt: now - 4 * DAY });
   // Older wins were delivered before this system; one recent win still needs setting up as a job.
   quotes.forEach((q) => { if (q.status === 'accepted' && !q.jobId) q.jobId = 'delivered'; });
-  Object.assign(quotes.at(-5), { status: 'accepted', jobId: null, lostReason: '', decidedAt: now - 2 * DAY });
-  Object.assign(quotes.at(-1), { status: 'draft', sentAt: null, decidedAt: null, lostReason: '', createdAt: now - 1 * DAY });
+  Object.assign(quotes.at(-5), { contractorId: 'k1', status: 'accepted', jobId: null, lostReason: '', decidedAt: now - 2 * DAY });
+  Object.assign(quotes.at(-1), { contractorId: 'k1', status: 'draft', sentAt: null, decidedAt: null, lostReason: '', createdAt: now - 1 * DAY });
   Object.assign(quotes.at(-3), { status: 'sent', decidedAt: null, lostReason: '', sentAt: now - 9 * DAY });
 
   const managers = [
     { id: 'm1', name: 'Dan Whitaker', role: 'manager', email: 'dan@northernfacades.co.uk' },
-    { id: 'm2', name: 'Gemma Hart', role: 'office', email: 'gemma@northernfacades.co.uk' },
+    { id: 'm2', name: 'Gemma Hart', role: 'office', email: 'gemma@injectaclad.co.uk' },
+  ];
+  const companies = [
+    { id: 'k1', type: 'contractor', name: 'Northern Facades', logo: DEFAULT_LOGO, contact: 'Dan Whitaker', email: 'dan@northernfacades.co.uk' },
+    { id: 'k2', type: 'contractor', name: 'Castlegate Cladding', logo: SEED_LOGOS.k2, contact: 'Alan Reid', email: 'alan@castlegatecladding.co.uk' },
+    { id: 'i1', type: 'installer', name: 'Apex Cavity Solutions', logo: SEED_LOGOS.i1, contact: 'Marie Byrne', email: 'office@apexcavity.co.uk' },
+    { id: 'i2', type: 'installer', name: 'Pennine Fire Protection', logo: SEED_LOGOS.i2, contact: 'Kerry Walsh', email: 'jobs@penninefire.co.uk' },
+    { id: 'i3', type: 'installer', name: 'Keystone Passive Fire', logo: SEED_LOGOS.i3, contact: 'Ola Adebayo', email: 'hello@keystonepf.co.uk' },
   ];
 
   return {
-    operatives, company, sites, pins, days, clients, quotes, managers,
-    branding: { name: 'Northern Facades', logo: DEFAULT_LOGO, cobrand: true },
+    operatives, company, sites, pins, days, clients, quotes, managers, companies,
+    branding: { cobrand: true },
     session: null, draft: null, quoteDraft: null, lastBatch: {},
   };
 }
@@ -472,5 +507,5 @@ export function persist() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* quota or private mode */ }
 }
 export function resetDemo() { state = seed(); persist(); }
-export function resetBranding() { state.branding.logo = DEFAULT_LOGO; persist(); }
+export function resetBranding(companyId) { const c = companyOf(companyId); if (c) c.logo = companyId === 'k1' ? DEFAULT_LOGO : SEED_LOGOS[companyId] || DEFAULT_LOGO; persist(); }
 

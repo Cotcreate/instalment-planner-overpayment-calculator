@@ -3,8 +3,9 @@ import * as db from './store.js';
 import { putFile, fileURL, deleteFile } from './files.js';
 import {
   esc, uid, I, toast, setAction, openSheet, trail, stepper, wireSteppers, readJSON, writeJSON,
-  avatar, rowItem, spec, money, moneyK, fileSize, sectionHead, dateShort, date, ago, wordmark,
+  avatar, rowItem, spec, money, moneyK, fileSize, sectionHead, dateShort, date, ago, wordmark, coLogo,
 } from './ui.js';
+import { companySheet, logoFromFile } from './admin.js';
 
 const DAY = 86400000;
 const STEPS = ['Client & job', 'Scope', 'Files', 'Review'];
@@ -75,9 +76,10 @@ export function quoteRow(q) {
   const t = db.quoteTotals(q);
   const exp = db.quoteExpiry(q);
   const soon = q.status === 'sent' && exp - Date.now() < 7 * DAY;
+  const inst = db.companyOf(q.installerCoId);
   return rowItem({
     href: `#/quotes/${q.id}`,
-    lead: avatar(c?.name, 40),
+    lead: inst ? coLogo(inst, 56, 40) : avatar(c?.name, 40),
     title: esc(q.title),
     sub: `<span class="mono">${esc(q.ref)}</span> · ${esc(c?.name)}${soon ? ` · <span style="color:var(--orange-deep);font-weight:700">expires ${dateShort(exp)}</span>` : ` · ${ago(q.createdAt)}`}`,
     trail: `<span>${moneyK(t.net)}</span>${quoteChip(q)}`,
@@ -86,7 +88,9 @@ export function quoteRow(q) {
 
 // ---------- Quote document ----------
 export function quoteDoc(q, { internal = false } = {}) {
-  const b = db.S().branding;
+  const con = db.companyOf(q.contractorId) || { name: 'Injectaclad', logo: db.INJECTACLAD_LOGO };
+  const inst = db.companyOf(q.installerCoId);
+  const b = { ...db.S().branding, name: con.name, logo: con.logo };
   const c = db.client(q.clientId);
   const contact = c?.contacts.find((x) => x.name === q.contact) || c?.contacts[0];
   const t = db.quoteTotals(q);
@@ -115,7 +119,7 @@ export function quoteDoc(q, { internal = false } = {}) {
       ${q.notes ? `<p class="eyebrow" style="margin-top:20px">Notes and exclusions</p><p class="small">${esc(q.notes)}</p>` : ''}
       ${internal ? `<div class="card flat noprint" style="margin:18px 0 0;background:#F7F9FB"><p class="eyebrow">Internal only</p><p style="margin:0">Cost ${money(t.cost)} · Margin <strong>${Math.round(t.margin * 100)}%</strong> · Prepared by ${esc(q.owner)}</p></div>` : ''}
       <footer class="doc-foot">
-        <span class="small muted">${esc(b.name)} · Injectaclad Approved Installer</span>
+        <span class="small muted">${esc(b.name)}${inst ? ` · installed by ${esc(inst.name)}, an Injectaclad Approved Installer` : ''}</span>
         ${b.cobrand ? `<span class="powered">QA records by ${wordmark()}</span>` : ''}
       </footer>
     </article>`;
@@ -145,6 +149,7 @@ export async function viewQuote(ctx, id) {
         <div class="line"><span class="fill" style="width:calc(${at * 50}% - ${at * 8}px)"></span>${steps.map((_, i) => `<i class="${i < at || (i === at && q.decidedAt) ? 'done' : i === at ? 'now' : ''}"></i>`).join('')}</div>
         <div class="meta">${steps.map(([l, d]) => `<span class="small"><strong>${l}</strong><br><span class="muted">${d ? dateShort(d) : '—'}</span></span>`).join('')}</div>
       </div>
+      <div class="cobar" style="margin:16px 0 0">${[['Contractor', db.companyOf(q.contractorId)], ['Installer', db.companyOf(q.installerCoId)]].filter(([, co]) => co).map(([l, co]) => `<span class="copill">${coLogo(co, 64, 32)}<span>${l} <b>${esc(co.name)}</b></span></span>`).join('')}</div>
       ${q.lostReason ? `<p class="small" style="margin:14px 0 0;color:var(--red);font-weight:700">Lost: ${esc(q.lostReason)}</p>` : ''}
       ${db.site(q.jobId) && staff(sess) ? `<a class="btn block" style="margin-top:14px" href="#/jobs/${q.jobId}">${I.sites}Open job</a>` : q.jobId === 'delivered' ? '<p class="small muted" style="margin:14px 0 0">Delivered before Injectatrace records began.</p>' : ''}
     </section>
@@ -242,7 +247,8 @@ function wireFileRows(host, q, onRemove) {
 
 // ---------- Convert to job ----------
 function createJobSheet(ctx, q) {
-  const ops = db.S().operatives;
+  const own = db.S().operatives.filter((o) => o.companyId === q.installerCoId);
+  const ops = own.length ? own : db.S().operatives;
   openSheet({
     title: 'Create job',
     body: `
@@ -251,7 +257,7 @@ function createJobSheet(ctx, q) {
       <fieldset class="field"><legend>Elevations</legend>
         <div class="choices c2">${['North', 'East', 'South', 'West'].map((e, i) => `<label class="choice"><input type="checkbox" name="el" value="${e}" ${i % 2 === 0 ? 'checked' : ''}><span>${e}</span></label>`).join('')}</div></fieldset>
       <div class="field"><label for="tp">Target hold points</label>${stepper('tp', 60, { step: 5, min: 5, max: 1000, label: 'Target hold points', unit: 'HP' })}</div>
-      <fieldset class="field"><legend>Assign installers</legend>
+      <fieldset class="field"><legend>Assign installers${db.companyOf(q.installerCoId) ? ` · ${esc(db.companyOf(q.installerCoId).name)}` : ''}</legend>
         <div class="group" style="margin:0">${ops.map((o, i) => rowItem({ lead: avatar(o.name, 36), title: esc(o.name), sub: esc(o.role), trail: `<input type="checkbox" name="op" value="${o.id}" ${i < 2 ? 'checked' : ''} aria-label="Assign ${esc(o.name)}" style="width:24px;height:24px">` })).join('')}</div>
         <p class="hint">Only assigned installers see this job on their phone.</p></fieldset>
       <p class="small muted">Client <strong>${esc(db.client(q.clientId)?.name)}</strong> will see progress in their portal. Quote files are copied into the job's documents.</p>`,
@@ -262,7 +268,7 @@ function createJobSheet(ctx, q) {
       const els = [...sh.querySelectorAll('[name=el]:checked')].map((x) => x.value);
       const team = [...sh.querySelectorAll('[name=op]:checked')].map((x) => x.value);
       if (!name || !els.length || !team.length) { toast('Add a name, an elevation and an installer'); return false; }
-      const st = db.createJob({ name, address: sh.querySelector('#ja').value.trim(), clientId: q.clientId, fireRating: q.fireRating, targetPins: +sh.querySelector('#tp').value || 60, elevations: els, team, quoteId: q.id, files: q.files });
+      const st = db.createJob({ name, address: sh.querySelector('#ja').value.trim(), clientId: q.clientId, contractorId: q.contractorId, installerCoId: q.installerCoId, fireRating: q.fireRating, targetPins: +sh.querySelector('#tp').value || 60, elevations: els, team, quoteId: q.id, files: q.files });
       q.jobId = st.id; db.persist();
       toast('Job created');
       location.hash = `#/jobs/${st.id}`;
@@ -271,22 +277,25 @@ function createJobSheet(ctx, q) {
 }
 
 // ---------- Builder ----------
-function newDraft(sess) {
+function newDraft(sess, params) {
   return {
     id: null, step: 0, ref: db.nextQuoteRef(), clientId: '', contact: '', title: '', address: '', fireRating: 60,
+    contractorId: sess.role === 'manager' ? sess.companyId : params?.get('contractor') || '',
+    installerCoId: params?.get('installer') || '',
     lines: [], discount: 0, validDays: 30, notes: 'Price based on drawings supplied. Assumes clear access to cavities and working hours 08:00–17:00 Mon–Fri. Excludes making good to finishes.',
     files: [], owner: sess.name, calc: { lm: 300, sock: 'sock80' },
   };
 }
 
-export function viewQuoteBuilder(ctx, id) {
+export function viewQuoteBuilder(ctx, id, params) {
   let d = db.S().quoteDraft;
   if (id && (!d || d.id !== id)) {
     const q = db.quote(id);
     if (!q) { location.hash = '#/quotes'; return; }
     d = { ...structuredClone(q), step: 0, calc: { lm: 300, sock: 'sock80' } };
   }
-  if (!id && (!d || d.id)) d = newDraft(ctx.sess);
+  if (!id && (!d || d.id || params?.get('installer') || params?.get('contractor'))) d = newDraft(ctx.sess, params);
+  if (params?.get('installer') || params?.get('contractor')) history.replaceState(null, '', '#/quotes/new');
   db.S().quoteDraft = d; db.persist();
   drawBuilder(ctx, d);
 }
@@ -304,6 +313,8 @@ function drawBuilder(ctx, d) {
       <div class="field"><label for="cl">Client</label>
         <div class="row" style="flex-wrap:nowrap"><select id="cl"><option value="">Choose client…</option>${db.S().clients.map((x) => `<option value="${x.id}" ${x.id === d.clientId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
         <button type="button" class="btn iconbtn" id="newcl" aria-label="Add new client">${I.plus}</button></div></div>
+      ${companyPicker('contractor', d.contractorId, ctx.sess.role === 'manager')}
+      ${companyPicker('installer', d.installerCoId, false)}
       ${c ? `<div class="field"><label for="ct">Contact</label><select id="ct">${c.contacts.map((p) => `<option ${p.name === d.contact ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
       <div class="field"><label for="ti">Job name</label><input id="ti" type="text" value="${esc(d.title)}" placeholder="e.g. Harbour View Tower, phase 2"></div>
       <div class="field"><label for="ad">Site address</label><input id="ad" type="text" value="${esc(d.address)}" placeholder="Street, town, postcode"></div>
@@ -359,7 +370,7 @@ function drawBuilder(ctx, d) {
     ${d.step > 0 ? '<button type="button" class="btn secondary" id="back">Back</button>' : '<a class="btn secondary" href="#/quotes" id="cancel">Cancel</a>'}
     ${last ? '<button type="button" class="btn secondary" id="savedraft">Save draft</button><button type="button" class="btn primary" id="sendnow">Send</button>' : `<button type="button" class="btn primary" id="next">Next${d.step === 1 && t.net ? ` · ${moneyK(t.net)}` : ''}</button>`}`);
   const next = bar.querySelector('#next');
-  const ok = () => [d.clientId && d.title.trim(), d.lines.length > 0, true, true][d.step];
+  const ok = () => [d.clientId && d.title.trim() && d.contractorId && d.installerCoId, d.lines.length > 0, true, true][d.step];
   const refresh = () => { if (next) next.disabled = !ok(); };
   refresh();
   bar.querySelector('#back')?.addEventListener('click', () => { d.step--; save(); drawBuilder(ctx, d); });
@@ -380,6 +391,14 @@ function drawBuilder(ctx, d) {
     main.querySelector('#ad').addEventListener('input', (e) => { d.address = e.target.value; save(); });
     main.querySelectorAll('[name=fr]').forEach((r) => r.addEventListener('change', () => { d.fireRating = +r.value; save(); }));
     main.querySelector('#newcl').addEventListener('click', () => clientSheet(ctx, (cl) => { d.clientId = cl.id; d.contact = cl.contacts[0]?.name || ''; save(); drawBuilder(ctx, d); }));
+    const field = { contractor: 'contractorId', installer: 'installerCoId' };
+    main.querySelectorAll('[data-copick]').forEach((sel) => sel.addEventListener('change', () => { d[field[sel.dataset.copick]] = sel.value; save(); drawBuilder(ctx, d); }));
+    main.querySelectorAll('[data-coadd]').forEach((b) => b.addEventListener('click', () => companySheet(b.dataset.coadd, (co) => { d[field[co.type]] = co.id; save(); drawBuilder(ctx, d); })));
+    main.querySelectorAll('[data-cologo]').forEach((inp) => inp.addEventListener('change', async () => {
+      const f = inp.files?.[0]; if (!f) return;
+      const co = db.companyOf(inp.dataset.cologo);
+      try { co.logo = await logoFromFile(f); db.persist(); toast(`${co.name} logo updated`); drawBuilder(ctx, d); } catch { toast('Could not read that image'); }
+    }));
   }
 
   if (d.step === 1) {
@@ -421,6 +440,19 @@ function drawBuilder(ctx, d) {
     wireSteppers(main, (k, v) => { if (k === 'vd') { d.validDays = v || 30; save(); } });
     main.querySelector('#nt').addEventListener('input', (e) => { d.notes = e.target.value; save(); });
   }
+}
+
+// Pick a contractor or installer company, see its logo, add a new one or upload its logo inline.
+function companyPicker(type, value, locked) {
+  const co = db.companyOf(value);
+  const label = type === 'installer' ? 'Installer company' : 'Contractor';
+  if (locked) return `<div class="field"><span class="label">${label}</span><span class="copill">${coLogo(co, 72, 36)}<b>${esc(co?.name)}</b></span></div>`;
+  return `
+    <div class="field"><label for="pick-${type}">${label}</label>
+      <div class="row" style="flex-wrap:nowrap"><select id="pick-${type}" data-copick="${type}"><option value="">Choose ${label.toLowerCase()}…</option>${db.companiesOf(type).map((x) => `<option value="${x.id}" ${x.id === value ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+      <button type="button" class="btn iconbtn" data-coadd="${type}" aria-label="Add new ${label.toLowerCase()}">${I.plus}</button></div>
+      ${co ? `<div class="row" style="margin-top:10px;flex-wrap:nowrap">${coLogo(co, 96, 48)}<label class="capture" style="flex:1"><input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-cologo="${co.id}" aria-label="Upload ${esc(co.name)} logo"><span class="btn sm block">${I.upload}${co.logo ? 'Replace logo' : 'Upload logo'}</span></label></div>` : ''}
+    </div>`;
 }
 
 function commit(d) {

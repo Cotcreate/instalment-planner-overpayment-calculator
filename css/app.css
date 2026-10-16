@@ -645,3 +645,15 @@ details.disc > .ri:first-of-type { border-top: 1px solid var(--line); }
 .drawopts .toggle { margin-left: auto; }
 .plabel { position: absolute; transform: translate(10px, -50%); pointer-events: none; font: 700 11px/1 var(--mono); padding: 3px 5px; border-radius: 6px; background: rgba(255,255,255,.95); color: var(--red); box-shadow: 0 1px 3px rgba(17,41,65,.25); white-space: nowrap; }
 .plabel.approved { color: var(--green); }
+
+/* Company logo tile (job icon) */
+.cologo { display: inline-flex; align-items: center; justify-content: center; flex: none; padding: 5px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 1px 2px rgba(17,41,65,.06); overflow: hidden; }
+.cologo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.cobar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.copill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; background: #fff; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; color: var(--ink-2); max-width: 100%; }
+.copill .cologo { border: 0; box-shadow: none; padding: 2px; border-radius: 999px; }
+.copill b { color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brandslot img { max-width: 210px; }
+
+.ri-title .wrap { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ri:has(.ri-title .wrap) .ri-title { white-space: normal; }

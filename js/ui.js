@@ -291,3 +291,8 @@ export function downloadFile(name, text, type = 'text/csv') {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 export const csv = (rows) => rows.map((r) => r.map((v) => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : (v ?? ''))).join(',')).join('\n');
+
+// Company logo tile: the job icon. Falls back to initials if a company has no logo yet.
+export const coLogo = (co, w = 64, h = 44) => (co?.logo
+  ? `<span class="cologo" style="width:${w}px;height:${h}px"><img src="${co.logo}" alt="${esc(co.name)}"></span>`
+  : `<span class="cologo" style="width:${w}px;height:${h}px">${avatar(co?.name || '?', Math.min(w, h) - 8)}</span>`);

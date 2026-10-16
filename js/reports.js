@@ -1,7 +1,7 @@
 // Quote reporting dashboard + report generation (CSV exports and a print-ready summary).
 import * as db from './store.js';
 import { barChart } from './chart.js';
-import { esc, I, setAction, moneyK, money, downloadFile, csv, date, sectionHead } from './ui.js';
+import { esc, I, setAction, moneyK, money, downloadFile, csv, date, sectionHead, coLogo } from './ui.js';
 
 const DAY = 86400000;
 const PERIODS = { q: ['Last 3 months', 91], y: ['Last 12 months', 365], all: ['All time', 1e5] };
@@ -11,14 +11,15 @@ export function viewReports(ctx, params) {
   db.sweepQuotes();
   const p = PERIODS[params.get('p')] ? params.get('p') : 'y';
   const since = Date.now() - PERIODS[p][1] * DAY;
-  const qs = db.S().quotes.filter((q) => q.status !== 'draft' && q.createdAt >= since);
+  const scope = db.quotesFor(ctx.sess);
+  const qs = scope.filter((q) => q.status !== 'draft' && q.createdAt >= since);
   const val = (q) => db.quoteTotals(q).net;
   const won = qs.filter((q) => q.status === 'accepted');
   const lost = qs.filter((q) => q.status === 'declined' || q.status === 'expired');
   const decided = won.length + lost.length;
   const quoted = qs.reduce((t, q) => t + val(q), 0);
   const wonV = won.reduce((t, q) => t + val(q), 0);
-  const open = db.S().quotes.filter((q) => q.status === 'sent');
+  const open = scope.filter((q) => q.status === 'sent');
   const days = qs.filter((q) => q.decidedAt && q.sentAt).map((q) => (q.decidedAt - q.sentAt) / DAY);
   const avgDays = days.length ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : 0;
   const margin = won.length ? won.reduce((t, q) => t + db.quoteTotals(q).margin * val(q), 0) / (wonV || 1) : 0;
@@ -29,12 +30,12 @@ export function viewReports(ctx, params) {
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-    const v = db.S().quotes.filter((q) => q.status === 'accepted' && q.decidedAt >= d && q.decidedAt < end).reduce((t, q) => t + val(q), 0);
+    const v = scope.filter((q) => q.status === 'accepted' && q.decidedAt >= d && q.decidedAt < end).reduce((t, q) => t + val(q), 0);
     months.push({ label: d.toLocaleDateString('en-GB', { month: 'short' }).slice(0, 3), detail: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }), value: +(v / 1000).toFixed(1) });
   }
 
   const byStatus = ['sent', 'accepted', 'declined', 'expired'].map((s) => {
-    const list = db.S().quotes.filter((q) => q.status === s && (s === 'sent' || q.createdAt >= since));
+    const list = scope.filter((q) => q.status === s && (s === 'sent' || q.createdAt >= since));
     return { label: db.QUOTE_STATUS[s].label + (s === 'sent' ? ' (open)' : ''), n: list.length, v: list.reduce((t, q) => t + val(q), 0), cls: s === 'accepted' ? 'won' : '' };
   });
   const byClient = Object.values(qs.reduce((m, q) => {
@@ -45,6 +46,15 @@ export function viewReports(ctx, params) {
     return m;
   }, {})).sort((a, b) => b.quoted - a.quoted).slice(0, 6);
   const reasons = Object.entries(lost.reduce((m, q) => { const r = q.lostReason || (q.status === 'expired' ? 'Expired, no response' : 'Unknown'); m[r] = (m[r] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
+  const byInst = Object.values(qs.reduce((m, q) => {
+    const c = db.companyOf(q.installerCoId);
+    if (!c) return m;
+    m[c.id] ||= { co: c, quoted: 0, won: 0 };
+    m[c.id].quoted += val(q);
+    if (q.status === 'accepted') m[c.id].won += val(q);
+    return m;
+  }, {})).sort((a, b) => b.won - a.won);
+  const maxI = Math.max(1, ...byInst.map((x) => x.quoted));
   const byOwner = Object.values(qs.reduce((m, q) => {
     m[q.owner] ||= { label: q.owner, n: 0, w: 0, d: 0 };
     m[q.owner].n++;
@@ -102,6 +112,8 @@ export function viewReports(ctx, params) {
       <section class="card">
         <p class="eyebrow">Why quotes were lost</p>
         <ul class="bars">${reasons.map(([r, n]) => `<li><span class="lbl">${esc(r)}</span><span class="val">${n}</span><span class="track"><i style="width:${(n / maxR) * 100}%"></i></span></li>`).join('') || '<li class="muted">Nothing lost in this period.</li>'}</ul>
+        <p class="eyebrow" style="margin-top:22px">By installer company · won / quoted</p>
+        <ul class="bars">${byInst.map((x) => `<li><span class="lbl" style="display:flex;align-items:center;gap:8px">${coLogo(x.co, 52, 28)}${esc(x.co.name)}</span><span class="val">${moneyK(x.won)} <span class="muted small">/ ${moneyK(x.quoted)}</span></span><span class="track" style="position:relative"><i style="position:absolute;inset:0 auto 0 0;width:${(x.quoted / maxI) * 100}%;background:var(--mist)"></i><i class="won" style="position:absolute;inset:0 auto 0 0;width:${(x.won / maxI) * 100}%"></i></span></li>`).join('')}</ul>
         <p class="eyebrow" style="margin-top:22px">By estimator</p>
         <ul class="bars">${byOwner.map((o) => `<li><span class="lbl">${esc(o.label)} <span class="muted small">· ${o.n} quotes</span></span><span class="val">${o.d ? Math.round((o.w / o.d) * 100) : 0}% won</span><span class="track"><i class="won" style="width:${o.d ? (o.w / o.d) * 100 : 0}%"></i></span></li>`).join('')}</ul>
       </section>
@@ -133,10 +145,10 @@ function runReport(kind, qs, months) {
   const stamp = new Date().toISOString().slice(0, 10);
   if (kind === 'print') return window.print();
   if (kind === 'register') {
-    const rows = [['Ref', 'Client', 'Job', 'Status', 'Created', 'Sent', 'Decided', 'Net £', 'VAT £', 'Total £', 'Margin %', 'Lost reason', 'Prepared by']];
+    const rows = [['Ref', 'Client', 'Contractor', 'Installer', 'Job', 'Status', 'Created', 'Sent', 'Decided', 'Net £', 'VAT £', 'Total £', 'Margin %', 'Lost reason', 'Prepared by']];
     qs.forEach((q) => {
       const t = db.quoteTotals(q);
-      rows.push([q.ref, db.client(q.clientId)?.name, q.title, db.QUOTE_STATUS[q.status].label, date(q.createdAt), q.sentAt ? date(q.sentAt) : '', q.decidedAt ? date(q.decidedAt) : '', t.net.toFixed(2), t.vat.toFixed(2), t.total.toFixed(2), Math.round(t.margin * 100), q.lostReason, q.owner]);
+      rows.push([q.ref, db.client(q.clientId)?.name, db.companyOf(q.contractorId)?.name, db.companyOf(q.installerCoId)?.name, q.title, db.QUOTE_STATUS[q.status].label, date(q.createdAt), q.sentAt ? date(q.sentAt) : '', q.decidedAt ? date(q.decidedAt) : '', t.net.toFixed(2), t.vat.toFixed(2), t.total.toFixed(2), Math.round(t.margin * 100), q.lostReason, q.owner]);
     });
     downloadFile(`quote-register-${stamp}.csv`, csv(rows));
   }

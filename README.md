@@ -13,12 +13,14 @@ npm test         # every screen, all roles, at 375px, 390px, tablet and desktop
 
 Sign in with any of the four demo accounts. Data is demo data stored on the device.
 
-| Role | Sees | Can do |
-|---|---|---|
-| Contractor manager | Everything for their company | Quote, report, set up clients and portal access, create jobs and assign installers/clients, QA, branding |
-| Back office | Everything except branding | Quote, create jobs, QA, client setup, compliance |
-| Installer | Only jobs they're assigned to | RAMS sign-off, hold point capture, daily checks, fix rework |
-| Client | Only jobs and quotes assigned to them, under the contractor's logo | Track progress, view QA-passed hold points and documents, accept or decline quotes |
+| Login | Top-bar logo | Sees | Can do |
+|---|---|---|---|
+| Injectaclad (backend) | Injectaclad | Every job and quote across all companies | Quote (choosing contractor + installer company), manage companies and their logos, create jobs, assign operatives and clients, QA, reports |
+| Contractor | The contractor's own logo | Only their own jobs and quotes | Quote (choosing installer company), create jobs, client setup, QA, reports, branding |
+| Installer | Injecta Fire Barrier | Only jobs they're assigned to | RAMS sign-off, hold point capture, daily checks, fix rework |
+| Client | Their contractor's logo | Only jobs and quotes assigned to them | Track progress, view QA-passed hold points and documents, accept or decline quotes |
+
+Every job and quote records a **contractor** and an **installer company**. The installer company's logo is the job icon on every list, so jobs are easy to tell apart when lots of companies are on the system. Logos can be uploaded when adding a company, from the company page, or straight from the quote builder.
 
 ## Quoting
 
@@ -67,7 +69,7 @@ js/app.js             sign-in, role-based nav, router, contractor branding
 js/home.js            staff and client home screens
 js/quotes.js          quote pipeline, builder, document, accept/decline, convert to job
 js/reports.js         quote reporting dashboard and exports
-js/admin.js           More hub, client setup / portal access, branding
+js/admin.js           More hub, companies (installers, contractors, logos), client setup, branding
 js/installer.js       Projects, Capture (hold point), Daily, Records, RAMS signing
 js/office.js          Jobs (+ job tabs incl. team assignment), QA queue, Team & compliance
 js/pin.js             hold point detail with QA / rework / resubmit

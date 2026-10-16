@@ -4,7 +4,7 @@ import { mountElevation, pinIcon } from './elevation.js';
 import { downscale, putFile, deleteFile, fileURL } from './files.js';
 import {
   esc, uid, num, I, time, ago, trail, toast, setAction, openSheet, qaChip, stepper, wireSteppers,
-  locate, gpsText, signaturePad, wordmark, tile, rowItem, iconBubble, sectionHead, readJSON, writeJSON,
+  locate, gpsText, signaturePad, wordmark, tile, rowItem, iconBubble, sectionHead, readJSON, writeJSON, coLogo,
 } from './ui.js';
 import { pinBrowser } from './pinlist.js';
 
@@ -109,7 +109,7 @@ export function viewProjects(ctx) {
       ${tile({ href: '#/records', icon: I.records, title: 'My records', sub: `${mine.filter((p) => p.qa === 'pending').length} awaiting QA`, tone: rework.length ? 'red' : 'navy', badge: rework.length ? `<span class="chip c-red">${rework.length} rework</span>` : '' })}
       ${tile({ icon: I.pen, title: 'RAMS', sub: signed ? `Rev ${cur.rams.rev} signed this week` : 'Not signed this week', tone: signed ? 'green' : 'orange', attrs: 'data-rams' })}
     </div>
-    ${sites.length > 1 ? `${sectionHead('Your other jobs')}<div class="group">${sites.filter((x) => x !== cur).map((x) => rowItem({ lead: iconBubble(I.sites, 'slate'), title: esc(x.name), sub: `${esc(x.address)} · FR ${x.fireRating}`, trail: '<span class="btn sm">Switch</span>', attrs: `data-switch="${x.id}" role="button" tabindex="0" style="cursor:pointer"` })).join('')}</div>` : ''}
+    ${sites.length > 1 ? `${sectionHead('Your other jobs')}<div class="group">${sites.filter((x) => x !== cur).map((x) => rowItem({ lead: coLogo(db.jobInstaller(x)), title: esc(x.name), sub: `${esc(x.address)} · FR ${x.fireRating}`, trail: '<span class="btn sm">Switch</span>', attrs: `data-switch="${x.id}" role="button" tabindex="0" style="cursor:pointer"` })).join('')}</div>` : ''}
     ${!standalone && installEvt ? `<div class="group" style="margin-top:14px">${rowItem({ lead: '<img src="icons/icon-192.png" alt="" style="width:44px;height:44px;border-radius:12px">', title: 'Add to home screen', sub: 'Full screen, works with no signal', trail: '<button class="btn sm primary" id="install">Install</button>' })}</div>` : ''}`;
 
   const sign = () => (signed ? toast(`RAMS rev ${cur.rams.rev} already signed this week`) : ramsSheet(cur, sess.operativeId, ctx.render));

@@ -4,7 +4,7 @@ import { mountElevation } from './elevation.js';
 import { putFile, fileURL, downscale } from './files.js';
 import {
   esc, uid, num, I, gbp, gbpBig, date, dateShort, time, toast, setAction, openSheet, qaChip, expiryChip,
-  readJSON, writeJSON, stepper, wireSteppers, avatar, ring, rowItem, iconBubble, sectionHead, spec, ago,
+  readJSON, writeJSON, stepper, wireSteppers, avatar, ring, rowItem, iconBubble, sectionHead, spec, ago, coLogo,
 } from './ui.js';
 import { jobRow } from './home.js';
 import { quoteRow } from './quotes.js';
@@ -31,48 +31,63 @@ export function viewJobs(ctx, params) {
   const { main, sess } = ctx;
   const isStaff = staff(ctx);
   const f = params.get('f') || 'active';
-  const fc = readJSON('injectatrace.jobClient', 'all');
-  const all = db.sitesFor(sess).filter((s) => !isStaff || fc === 'all' || s.clientId === fc);
+  const ff = { client: 'all', installer: 'all', contractor: 'all', ...readJSON('injectatrace.jobFilters', {}) };
+  const all = db.sitesFor(sess).filter((s) => !isStaff || ((ff.client === 'all' || s.clientId === ff.client)
+    && (ff.installer === 'all' || s.installerCoId === ff.installer) && (ff.contractor === 'all' || s.contractorId === ff.contractor)));
   const list = all.filter((s) => f === 'all' || s.status === f);
+  const nf = ['client', 'installer', 'contractor'].filter((k) => ff[k] !== 'all').length;
+  const sel = (id, label, opts, cur) => `<div class="field"><label for="${id}">${label}</label><select id="${id}"><option value="all">All</option>${opts.map((o) => `<option value="${o.id}" ${o.id === cur ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select></div>`;
 
   main.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">${list.length} job${list.length === 1 ? '' : 's'}</p><h1>Jobs</h1></div>
       ${isStaff ? `<button class="btn primary sm" id="newjob">${I.plus}New job</button>` : ''}</div>
     <div class="spread" style="gap:10px;align-items:flex-start">
       <nav class="seg" aria-label="Filter jobs" style="flex:1">${[['active', 'Live'], ['complete', 'Complete'], ['all', 'All']].map(([k, l]) => `<a href="#/jobs?f=${k}" ${k === f ? 'aria-current="page"' : ''}>${l} <span class="n">${all.filter((s) => k === 'all' || s.status === k).length}</span></a>`).join('')}</nav>
-      ${isStaff ? `<button type="button" class="btn iconbtn" id="filters" aria-label="Filter by client" style="margin-top:2px;background:${fc !== 'all' ? 'var(--navy)' : 'var(--white)'};color:${fc !== 'all' ? '#fff' : 'var(--navy)'}">${I.filter}</button>` : ''}
+      ${isStaff ? `<button type="button" class="btn iconbtn" id="filters" aria-label="Filter jobs by company or client" style="margin-top:2px;background:${nf ? 'var(--navy)' : 'var(--white)'};color:${nf ? '#fff' : 'var(--navy)'}">${I.filter}</button>` : ''}
     </div>
     <div class="group">${list.map((s) => jobRow(s, { sess })).join('') || '<div class="empty">No jobs here.</div>'}</div>`;
 
   main.querySelector('#filters')?.addEventListener('click', () => openSheet({
     title: 'Filter jobs',
-    body: `<div class="field"><label for="fc">Client</label><select id="fc"><option value="all">All clients</option>${db.S().clients.map((c) => `<option value="${c.id}" ${c.id === fc ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`,
+    body: `${sel('fi', 'Installer company', db.companiesOf('installer'), ff.installer)}
+      ${sess.role === 'office' ? sel('fk', 'Contractor', db.companiesOf('contractor'), ff.contractor) : ''}
+      ${sel('fc', 'Client', db.S().clients, ff.client)}`,
     primary: 'Show jobs', secondary: 'Reset',
-    onPrimary: (sh) => { writeJSON('injectatrace.jobClient', sh.querySelector('#fc').value); ctx.render(); },
-    onSecondary: (sh) => { sh.querySelector('#fc').value = 'all'; },
+    onPrimary: (sh) => { writeJSON('injectatrace.jobFilters', { client: sh.querySelector('#fc').value, installer: sh.querySelector('#fi').value, contractor: sh.querySelector('#fk')?.value || 'all' }); ctx.render(); },
+    onSecondary: (sh) => sh.querySelectorAll('select').forEach((x) => { x.value = 'all'; }),
   }));
   main.querySelector('#newjob')?.addEventListener('click', () => newJobSheet(ctx));
   setAction(main, null);
 }
 
 function newJobSheet(ctx) {
+  const mgr = ctx.sess.role === 'manager';
+  const teamRows = (coId) => db.S().operatives.filter((o) => o.companyId === coId).map((o) => rowItem({ lead: avatar(o.name, 36), title: esc(o.name), sub: esc(o.role), trail: `<input type="checkbox" name="op" value="${o.id}" checked aria-label="Assign ${esc(o.name)}" style="width:24px;height:24px">` })).join('') || '<div class="empty small">Pick an installer company first.</div>';
   openSheet({
     title: 'New job',
     body: `
       <div class="field"><label for="jn">Job name</label><input id="jn" type="text"></div>
+      ${mgr ? '' : `<div class="field"><label for="jk">Contractor</label><select id="jk"><option value="">Choose contractor…</option>${db.companiesOf('contractor').map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>`}
+      <div class="field"><label for="ji">Installer company</label><select id="ji"><option value="">Choose installer…</option>${db.companiesOf('installer').map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><div id="jilogo" style="margin-top:8px"></div></div>
       <div class="field"><label for="jc">Client</label><select id="jc"><option value="">Choose client…</option>${db.S().clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
       <div class="field"><label for="ja">Site address</label><input id="ja" type="text"></div>
       <fieldset class="field"><legend>Fire rating</legend><div class="choices c2">${db.FIRE_RATINGS.map((r, i) => `<label class="choice"><input type="radio" name="fr" value="${r}" ${i === 1 ? 'checked' : ''}><span>${r} min</span></label>`).join('')}</div></fieldset>
       <fieldset class="field"><legend>Elevations</legend><div class="choices c2">${['North', 'East', 'South', 'West'].map((e) => `<label class="choice"><input type="checkbox" name="el" value="${e}" checked><span>${e}</span></label>`).join('')}</div></fieldset>
-      <fieldset class="field"><legend>Assign installers</legend><div class="group" style="margin:0">${db.S().operatives.map((o) => rowItem({ lead: avatar(o.name, 36), title: esc(o.name), sub: esc(o.role), trail: `<input type="checkbox" name="op" value="${o.id}" aria-label="Assign ${esc(o.name)}" style="width:24px;height:24px">` })).join('')}</div></fieldset>`,
+      <fieldset class="field"><legend>Assign installers</legend><div class="group" style="margin:0" id="jteam">${teamRows('')}</div></fieldset>`,
     primary: 'Create job',
+    onOpen: (sh) => sh.querySelector('#ji').addEventListener('change', (e) => {
+      sh.querySelector('#jteam').innerHTML = teamRows(e.target.value);
+      sh.querySelector('#jilogo').innerHTML = e.target.value ? coLogo(db.companyOf(e.target.value), 110, 52) : '';
+    }),
     onPrimary: (sh) => {
       const name = sh.querySelector('#jn').value.trim();
       const clientId = sh.querySelector('#jc').value;
+      const contractorId = mgr ? ctx.sess.companyId : sh.querySelector('#jk').value;
+      const installerCoId = sh.querySelector('#ji').value;
       const team = [...sh.querySelectorAll('[name=op]:checked')].map((x) => x.value);
       const els = [...sh.querySelectorAll('[name=el]:checked')].map((x) => x.value);
-      if (!name || !clientId || !team.length || !els.length) { toast('Add a name, client, elevation and installer'); return false; }
-      const st = db.createJob({ name, clientId, address: sh.querySelector('#ja').value.trim(), fireRating: +sh.querySelector('[name=fr]:checked').value, elevations: els, team });
+      if (!name || !clientId || !contractorId || !installerCoId || !team.length || !els.length) { toast('Add a name, contractor, installer, client, elevation and operative'); return false; }
+      const st = db.createJob({ name, clientId, contractorId, installerCoId, address: sh.querySelector('#ja').value.trim(), fireRating: +sh.querySelector('[name=fr]:checked').value, elevations: els, team });
       toast('Job created'); location.hash = `#/jobs/${st.id}`;
     },
   });
@@ -94,6 +109,7 @@ export async function viewJob(ctx, id, tab = 'overview', params) {
     <p class="eyebrow">${esc(db.clientName(st))} · FR ${st.fireRating} min</p>
     <h1 style="margin-bottom:4px">${esc(st.name)}</h1>
     <p class="muted">${esc(st.address || '')}</p>
+    <div class="cobar">${[['Installer', db.jobInstaller(st)], ['Contractor', db.companyOf(st.contractorId)]].filter(([, co]) => co).map(([l, co]) => `<span class="copill">${coLogo(co, 64, 32)}<span>${l} <b>${esc(co.name)}</b></span></span>`).join('')}</div>
     <section class="card" style="display:flex;gap:16px;align-items:center">
       ${ring(s.pct, 76, `${s.pct}% QA passed`)}
       <dl class="ministats">
@@ -287,18 +303,29 @@ function jobDocs(ctx, st, host) {
 }
 
 function jobTeam(ctx, st, host) {
+  const co = db.jobInstaller(st);
+  const ops = db.S().operatives.filter((o) => o.companyId === st.installerCoId || st.team.includes(o.id));
   host.innerHTML = `
     <div class="twocol">
       <div>
-        ${sectionHead('Installers on this job')}
-        <p class="muted small" style="margin-top:-4px">Only ticked installers see this job on their phone.</p>
-        <div class="group">${db.S().operatives.map((o) => rowItem({
+        ${sectionHead('Installer company')}
+        <div class="card">
+          <div class="row" style="flex-wrap:nowrap;gap:12px">${coLogo(co, 96, 48)}<select id="ico" aria-label="Installer company" style="flex:1">${db.companiesOf('installer').map((c) => `<option value="${c.id}" ${c.id === st.installerCoId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+          <p class="hint">Their logo is the job icon everywhere, so the job is easy to spot.</p>
+        </div>
+        ${sectionHead('Operatives on this job')}
+        <p class="muted small" style="margin-top:-4px">Only ticked operatives see this job on their phone.</p>
+        <div class="group">${ops.map((o) => rowItem({
           lead: avatar(o.name, 40), title: esc(o.name), sub: `${esc(o.role)} · ${gbp(o.rate)}/h`,
           trail: `<input type="checkbox" data-op="${o.id}" ${st.team.includes(o.id) ? 'checked' : ''} aria-label="Assign ${esc(o.name)}" style="width:26px;height:26px">`,
-        })).join('')}</div>
+        })).join('') || '<div class="empty small">This company has no operatives yet.</div>'}</div>
         <p class="hint">Hourly rates are never shown to the client or to other operatives.</p>
       </div>
       <div>
+        ${ctx.sess.role === 'office' ? `${sectionHead('Contractor')}
+        <div class="card"><div class="field" style="margin:0"><label for="ck" class="sr">Contractor</label>
+          <select id="ck">${db.companiesOf('contractor').map((c) => `<option value="${c.id}" ${c.id === st.contractorId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+          <p class="hint">The contractor sees this job, its quotes and QA in their portal.</p></div></div>` : ''}
         ${sectionHead('Client')}
         <div class="card"><div class="field" style="margin:0"><label for="cl">Shared with</label>
           <select id="cl"><option value="">Nobody</option>${db.S().clients.map((c) => `<option value="${c.id}" ${c.id === st.clientId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
@@ -307,21 +334,24 @@ function jobTeam(ctx, st, host) {
     </div>`;
   host.querySelectorAll('[data-op]').forEach((cb) => cb.addEventListener('change', () => {
     if (cb.checked) st.team.push(cb.dataset.op); else st.team = st.team.filter((x) => x !== cb.dataset.op);
-    db.persist(); toast(cb.checked ? 'Installer assigned' : 'Installer removed');
+    db.persist(); toast(cb.checked ? 'Operative assigned' : 'Operative removed');
   }));
+  host.querySelector('#ico').addEventListener('change', (e) => { st.installerCoId = e.target.value; db.persist(); toast('Installer company updated'); ctx.render(); });
+  host.querySelector('#ck')?.addEventListener('change', (e) => { st.contractorId = e.target.value; db.persist(); toast('Contractor updated'); });
   host.querySelector('#cl').addEventListener('change', (e) => { st.clientId = e.target.value || null; db.persist(); toast('Client updated'); });
 }
 
 // ---------- QA ----------
 export function viewQA(ctx) {
   const { main } = ctx;
-  const q = db.S().pins.filter((p) => p.qa === 'pending').sort((a, b) => a.createdAt - b.createdAt);
+  const ids = new Set(db.sitesFor(ctx.sess).map((x) => x.id));
+  const q = db.S().pins.filter((p) => p.qa === 'pending' && ids.has(p.siteId)).sort((a, b) => a.createdAt - b.createdAt);
   const bySite = {};
   q.forEach((p) => (bySite[p.siteId] ||= []).push(p));
   main.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Quality check · by pin number</p><h1>QA queue</h1></div><span class="chip ${q.length ? 'c-red' : 'c-green'}">${q.length} waiting</span></div>
     <p class="muted">Pins stay red on the drawing until they pass QA, then turn green.</p>
-    ${Object.entries(bySite).map(([sid, ps]) => `${sectionHead(`${esc(db.site(sid).name)} <span class="mono muted" style="font-size:15px">${ps.length}</span>`)}<div class="group">${ps.map((p) => pinRow(p)).join('')}</div>`).join('')
+    ${Object.entries(bySite).map(([sid, ps]) => `${sectionHead(`<span style="display:inline-flex;align-items:center;gap:10px">${coLogo(db.jobInstaller(db.site(sid)), 56, 36)}${esc(db.site(sid).name)} <span class="mono muted" style="font-size:15px">${ps.length}</span></span>`)}<div class="group">${ps.map((p) => pinRow(p)).join('')}</div>`).join('')
       || `<div class="group">${rowItem({ lead: iconBubble(I.check, 'green'), title: 'All clear', sub: 'Nothing waiting for QA' })}</div>`}`;
   setAction(main, null);
 }
@@ -337,7 +367,7 @@ export function viewCompany(ctx, params) {
   if (t === 'team') {
     body = `<div class="group">${db.S().operatives.map((o) => rowItem({
       attrs: `data-op="${o.id}" role="button" tabindex="0" style="cursor:pointer"`,
-      lead: avatar(o.name, 44), title: esc(o.name), sub: `${esc(o.role)} · ${gbp(o.rate)}/h · ${o.quals.length} qualifications`,
+      lead: avatar(o.name, 44), title: esc(o.name), sub: `${esc(db.companyOf(o.companyId)?.name || '')} · ${esc(o.role)} · ${gbp(o.rate)}/h`,
       trail: worst(o) === 'expired' ? `<span class="chip c-red">${I.alert}Expired</span>` : worst(o) === 'soon' ? `<span class="chip c-amber">${I.clock}Expiring</span>` : `<span class="chip c-green">${I.check}In date</span>`,
     })).join('')}</div>
     <button class="btn block" id="addop">${I.plus}Add operative</button>`;
@@ -356,7 +386,7 @@ export function viewCompany(ctx, params) {
   }
   main.innerHTML = `
     <a class="btn sm ghost" href="#/more" style="margin:-8px 0 8px -12px">${I.back}More</a>
-    <div class="pagehead"><div><p class="eyebrow">${esc(db.S().branding.name)}</p><h1>Team &amp; compliance</h1></div></div>
+    <div class="pagehead"><div><p class="eyebrow">Approved installers</p><h1>Team &amp; compliance</h1></div></div>
     <nav class="seg" aria-label="Sections">${[['team', 'Operatives'], ['insurance', 'Insurance'], ['accreditations', 'Accreditations'], ['rates', 'Rates']].map(([k, l]) => `<a href="#/company?t=${k}" ${k === t ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
     ${body}`;
 

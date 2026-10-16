@@ -1,7 +1,7 @@
 // Home screens for staff (manager / back office) and clients. One hero, a short to-do list, previews.
 import * as db from './store.js';
 import { quoteRow } from './quotes.js';
-import { esc, I, setAction, rowItem, iconBubble, sectionHead, ring, moneyK, avatar } from './ui.js';
+import { esc, I, setAction, rowItem, iconBubble, sectionHead, ring, moneyK, avatar, coLogo } from './ui.js';
 
 const DAY = 86400000;
 const greet = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
@@ -10,11 +10,12 @@ const today = () => new Date().toLocaleDateString('en-GB', { weekday: 'long', da
 export function jobRow(st, { sess } = {}) {
   const s = db.siteStats(st);
   const staff = sess?.role === 'manager' || sess?.role === 'office';
+  const inst = db.jobInstaller(st);
   return rowItem({
     href: `#/jobs/${st.id}`,
-    lead: ring(s.pct, 48, `${s.pct}% QA passed`),
-    title: esc(st.name),
-    sub: `${esc(db.clientName(st))} · FR ${st.fireRating} min${st.status === 'complete' ? ' · complete' : ''}`,
+    lead: coLogo(inst, 92, 58),
+    title: `<span class="wrap">${esc(st.name)}</span>`,
+    sub: `<b style="color:var(--ink)">${s.pct}%</b> passed · ${esc(inst?.name || 'No installer')}${st.status === 'complete' ? ' · complete' : ''}`,
     trail: staff && s.pending ? `<span class="chip c-red">${s.pending} QA</span>` : s.rejected && staff ? `<span class="chip c-amber">${s.rejected} rework</span>` : `<span class="muted small">${s.approved}/${st.targetPins}</span>`,
   });
 }
@@ -24,15 +25,17 @@ export function viewHome(ctx) {
   if (sess.role === 'client') return clientHome(ctx);
   const { main } = ctx;
   db.sweepQuotes();
-  const sites = db.S().sites.filter((s) => s.status === 'active');
-  const quotes = db.S().quotes;
+  const mine = db.sitesFor(sess);
+  const ids = new Set(mine.map((s) => s.id));
+  const sites = mine.filter((s) => s.status === 'active');
+  const quotes = db.quotesFor(sess);
   const open = quotes.filter((q) => q.status === 'sent');
-  const pending = db.S().pins.filter((p) => p.qa === 'pending').length;
+  const pending = db.S().pins.filter((p) => p.qa === 'pending' && ids.has(p.siteId)).length;
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
   const wonMonth = quotes.filter((q) => q.status === 'accepted' && q.decidedAt >= monthStart).reduce((t, q) => t + db.quoteTotals(q).net, 0);
   const expiring = open.filter((q) => db.quoteExpiry(q) - Date.now() < 7 * DAY);
   const drafts = quotes.filter((q) => q.status === 'draft');
-  const alerts = db.alerts();
+  const alerts = db.alerts().filter((a) => a.href === '#/company' || [...ids].some((id) => a.href.includes(`/${id}/`)));
   const compliance = alerts.filter((a) => a.href === '#/company');
   const jobIssues = alerts.filter((a) => a.href !== '#/company');
   const toWin = quotes.filter((q) => q.status === 'accepted' && !q.jobId);
@@ -107,8 +110,9 @@ function clientHome(ctx) {
     </section>` : '<div class="card empty">No jobs shared with you yet.</div>'}
     ${toReview.length ? `${sectionHead('Quotes for your review')}<div class="group">${toReview.map(quoteRow).join('')}</div>` : ''}
     ${jobs.length > 1 ? `${sectionHead('Your jobs')}<div class="group">${jobs.map((j) => jobRow(j, { sess })).join('')}</div>` : ''}
-    ${sectionHead('Your contractor')}
-    <div class="group">${rowItem({ lead: `<img src="${db.S().branding.logo}" alt="" style="height:36px;width:auto;max-width:120px;object-fit:contain">`, title: esc(db.S().branding.name), sub: 'Injectaclad Approved Installer' })}</div>`;
+    ${sectionHead('Who\'s on your job')}
+    <div class="group">${(() => { const b = db.brandFor(sess); return rowItem({ lead: coLogo(b, 96, 48), title: esc(b.name), sub: 'Your contractor' }); })()}
+      ${lead && db.jobInstaller(lead) ? rowItem({ lead: coLogo(db.jobInstaller(lead), 96, 48), title: esc(db.jobInstaller(lead).name), sub: 'Injectaclad Approved Installer' }) : ''}</div>`;
   setAction(main, null);
 }
 

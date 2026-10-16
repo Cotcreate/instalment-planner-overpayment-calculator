@@ -19,7 +19,7 @@ const VIEWPORTS = [
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64');
 const failures = [];
 const fail = (m) => { failures.push(m); console.log('  FAIL', m); };
-const state = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v4')));
+const state = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v5')));
 
 async function audit(page, vp, label) {
   await page.waitForTimeout(150);
@@ -78,9 +78,16 @@ async function run(browser, vp) {
   if (!(await page.locator('.brandslot img').getAttribute('src')).startsWith('data:image')) fail(`[${vp.name}] contractor logo missing from top bar`);
   await audit(page, vp, '01-manager-home');
 
+  await go('jobs?f=all', '.group');
+  if (await page.locator('.group a.ri').count() !== 2) fail(`[${vp.name}] contractor sees jobs that aren't theirs`);
+  if (!(await page.locator('.group a.ri .cologo img').count())) fail(`[${vp.name}] job rows missing installer logo`);
   await go('quotes/new', '#cl');
+  if (await page.locator('#pick-contractor').count()) fail(`[${vp.name}] contractor can change contractor on quote`);
   await page.selectOption('#cl', 'c4');
+  await page.selectOption('#pick-installer', 'i1');
+  await page.waitForSelector('[data-cologo=i1]');
   await page.locator('#ti').fill('Canal Wharf apartments');
+  await page.locator('#ti').dispatchEvent('input');
   await page.locator('#ad').fill('Canal Street, Manchester M1');
   await audit(page, vp, '02-quote-client');
   await tap(page.locator('#next'));
@@ -191,9 +198,37 @@ async function run(browser, vp) {
   await go('company?t=insurance', '.seg');
   await audit(page, vp, '13-compliance');
 
+  // ===== Injectaclad backend: companies, logos, quoting with contractor + installer =====
+  await signIn('office');
+  if (!(await page.locator('.brandslot img').getAttribute('src')).includes('injectaclad')) fail(`[${vp.name}] backend not showing Injectaclad logo`);
+  await go('jobs?f=all', '.group');
+  if (await page.locator('.group a.ri').count() !== 3) fail(`[${vp.name}] backend can't see every job`);
+  await go('companies', '.seg');
+  await audit(page, vp, '13b-companies');
+  await tap(page.locator('#add'));
+  await sheetOpen();
+  await page.locator('#kn').fill('Summit Cavity Barriers');
+  await page.locator('#kl').setInputFiles({ name: 'summit.png', mimeType: 'image/png', buffer: PNG });
+  await page.waitForSelector('#kprev img');
+  await tap(page.locator('.sheet [data-primary]'));
+  await page.waitForSelector('.cologo img');
+  const summit = (await state(page)).companies.find((c) => c.name === 'Summit Cavity Barriers');
+  if (!summit || !summit.logo?.startsWith('data:image')) fail(`[${vp.name}] new installer company or logo not saved`);
+  await audit(page, vp, '13c-company-card');
+  await go('quotes/new', '#cl');
+  await page.selectOption('#cl', 'c2');
+  await page.selectOption('#pick-contractor', 'k2');
+  await page.selectOption('#pick-installer', summit.id);
+  await page.waitForSelector(`[data-cologo="${summit.id}"]`);
+  await page.locator('#ti').fill('Minster Court');
+  await page.locator('#ti').dispatchEvent('input');
+  await audit(page, vp, '13d-backend-quote');
+  if (await page.locator('#next').isDisabled()) fail(`[${vp.name}] backend quote step 1 blocked`);
+  await tap(page.locator('#cancel'));
+
   // ===== Client: accepts the quote in their portal =====
   // Castlefield has no demo login, so hand the quote to Northgate for the portal test.
-  await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('injectatrace.v4')); s.quotes.find((q) => q.id === id).clientId = 'c1'; localStorage.setItem('injectatrace.v4', JSON.stringify(s)); }, quote.id);
+  await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('injectatrace.v5')); s.quotes.find((q) => q.id === id).clientId = 'c1'; localStorage.setItem('injectatrace.v5', JSON.stringify(s)); }, quote.id);
   await signIn('client');
   await page.waitForSelector('.hero');
   await audit(page, vp, '14-client-home');
@@ -229,6 +264,7 @@ async function run(browser, vp) {
   // ===== Installer =====
   await signIn('installer');
   await page.waitForSelector('.hero');
+  if (!(await page.locator('.brandslot img').getAttribute('src')).includes('injecta-fire-barrier')) fail(`[${vp.name}] installer not showing Injecta Fire Barrier logo`);
   if (!(await page.locator('main').innerText()).includes('Canal Wharf')) fail(`[${vp.name}] assigned installer can't see new job`);
   await audit(page, vp, '17-installer-today');
   await tap(page.locator('.hero #next'));

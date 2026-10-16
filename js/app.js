@@ -6,7 +6,7 @@ import { viewJobs, viewJob, viewQA, viewCompany } from './office.js';
 import { viewHome } from './home.js';
 import { viewQuotes, viewQuote, viewQuoteBuilder } from './quotes.js';
 import { viewReports } from './reports.js';
-import { viewMore, viewClients, viewClient, viewBranding } from './admin.js';
+import { viewMore, viewClients, viewClient, viewBranding, viewCompanies, viewCompanyCard } from './admin.js';
 import { viewPin } from './pin.js';
 
 const main = document.getElementById('main');
@@ -23,15 +23,15 @@ const NAV = {
 // Routes reachable from inside a section, and which tab they light up.
 const EXTRA = {
   manager: { pin: 'jobs', qa: 'more', clients: 'more', company: 'more', branding: 'more' },
-  office: { pin: 'qa', reports: 'more', clients: 'more', company: 'more', branding: 'more' },
+  office: { pin: 'qa', reports: 'more', clients: 'more', company: 'more', companies: 'more' },
   installer: { pin: 'records' },
   client: { pin: 'jobs' },
 };
 const HOME = { manager: 'home', office: 'home', installer: 'today', client: 'home' };
-const ROLE = { manager: 'Contractor manager', office: 'Back office', installer: 'Installer', client: 'Client' };
+const ROLE = { manager: 'Contractor', office: 'Injectaclad', installer: 'Installer', client: 'Client' };
 const DEMO = {
-  manager: { email: 'dan@northernfacades.co.uk', name: 'Dan Whitaker' },
-  office: { email: 'gemma@northernfacades.co.uk', name: 'Gemma Hart' },
+  manager: { email: 'dan@northernfacades.co.uk', name: 'Dan Whitaker', companyId: 'k1' },
+  office: { email: 'gemma@injectaclad.co.uk', name: 'Gemma Hart' },
   installer: { email: 'jay@installer.co.uk', name: 'Jay Patel', operativeId: 'o1' },
   client: { email: 'priya.shah@northgatebuild.co.uk', name: 'Priya Shah', clientId: 'c1' },
 };
@@ -48,7 +48,8 @@ function signIn() {
   document.querySelector('.actionbar')?.remove();
   main.classList.remove('has-action');
   main.style.padding = '0'; main.style.maxWidth = 'none';
-  let role = 'manager';
+  let role = 'office';
+  const LABELS = { office: 'Injectaclad', manager: 'Contractor', installer: 'Installer', client: 'Client' };
   main.innerHTML = `
     <div class="signin">
       <div class="hero on-navy" style="border-radius:0;margin:0;box-shadow:none">
@@ -60,7 +61,7 @@ function signIn() {
       <form id="f" novalidate>
         <h2>Sign in</h2>
         <fieldset class="field"><legend>Demo account</legend>
-          <div class="choices c2">${Object.entries(ROLE).map(([k, l]) => `<label class="choice"><input type="radio" name="role" value="${k}" ${k === role ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+          <div class="choices c2">${Object.entries(LABELS).map(([k, l]) => `<label class="choice"><input type="radio" name="role" value="${k}" ${k === role ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
         </fieldset>
         <div class="field"><label for="em">Email</label><input id="em" type="email" autocomplete="username" value="${DEMO[role].email}"></div>
         <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" value="demo-password"></div>
@@ -82,10 +83,11 @@ function signIn() {
 function chrome(sess, active) {
   document.body.classList.add('has-nav');
   top.hidden = false; nav.hidden = false;
-  const b = db.S().branding;
-  top.querySelector('.brandslot').innerHTML = `<img src="${b.logo}" alt="${esc(b.name)}">`;
+  const b = db.brandFor(sess);
+  top.querySelector('.brandslot').innerHTML = `<img src="${b.logo}" alt="${esc(b.name)}" style="${sess.role === 'installer' ? 'height:44px' : ''}">`;
   top.querySelector('#acct').innerHTML = `<span class="who">${esc(sess.name)}<small>${ROLE[sess.role]}</small></span>${avatar(sess.name, 38)}`;
-  const pending = db.S().pins.filter((p) => p.qa === 'pending').length;
+  const ids = new Set(db.sitesFor(sess).map((x) => x.id));
+  const pending = db.S().pins.filter((p) => p.qa === 'pending' && ids.has(p.siteId)).length;
   const rework = sess.role === 'installer' ? db.S().pins.filter((p) => p.qa === 'rejected' && p.operative === sess.operativeId).length : 0;
   const review = sess.role === 'client' ? db.quotesFor(sess).filter((q) => q.status === 'sent').length : 0;
   nav.innerHTML = `${NAV[sess.role].map(([k, l, icon]) => {
@@ -111,7 +113,7 @@ function render() {
   chrome(sess, tabs.includes(r.name) ? r.name : extra[r.name]);
   const ctx = { main, sess, render, cleanups };
   const titles = { home: 'Home', today: 'Today', capture: 'Capture', daily: 'Daily', records: 'Records', quotes: 'Quotes', jobs: 'Jobs', reports: 'Reports', qa: 'QA', more: 'More', clients: 'Clients', company: 'Team', branding: 'Branding', pin: 'Hold point' };
-  document.title = `${titles[r.name]} · ${db.S().branding.name}`;
+  document.title = `${titles[r.name] || 'Companies'} · ${db.brandFor(sess).name}`;
 
   const v = {
     home: () => viewHome(ctx),
@@ -119,7 +121,7 @@ function render() {
     capture: () => viewCapture(ctx, r.params),
     daily: () => viewDaily(ctx, r.params),
     records: () => viewRecords(ctx, r.params),
-    quotes: () => (r.id === 'new' ? viewQuoteBuilder(ctx) : r.id && r.tab === 'edit' ? viewQuoteBuilder(ctx, r.id) : r.id ? viewQuote(ctx, r.id) : viewQuotes(ctx, r.params)),
+    quotes: () => (r.id === 'new' ? viewQuoteBuilder(ctx, null, r.params) : r.id && r.tab === 'edit' ? viewQuoteBuilder(ctx, r.id) : r.id ? viewQuote(ctx, r.id) : viewQuotes(ctx, r.params)),
     jobs: () => (r.id ? viewJob(ctx, r.id, r.tab, r.params) : viewJobs(ctx, r.params)),
     reports: () => viewReports(ctx, r.params),
     qa: () => viewQA(ctx),
@@ -127,6 +129,7 @@ function render() {
     clients: () => (r.id ? viewClient(ctx, r.id) : viewClients(ctx)),
     company: () => viewCompany(ctx, r.params),
     branding: () => viewBranding(ctx),
+    companies: () => (r.id ? viewCompanyCard(ctx, r.id) : viewCompanies(ctx, r.params)),
     pin: () => viewPin(ctx, r.id),
   };
   if ((r.name === 'quotes' && (r.id === 'new' || r.tab === 'edit')) && sess.role === 'client') { location.replace('#/quotes'); return; }
