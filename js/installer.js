@@ -4,8 +4,9 @@ import { mountElevation, pinIcon } from './elevation.js';
 import { downscale, putFile, deleteFile, fileURL } from './files.js';
 import {
   esc, uid, num, I, time, ago, trail, toast, setAction, openSheet, qaChip, stepper, wireSteppers,
-  locate, gpsText, signaturePad, wordmark,
+  locate, gpsText, signaturePad, wordmark, tile, rowItem, iconBubble, sectionHead, readJSON, writeJSON,
 } from './ui.js';
+import { pinRow } from './office.js';
 
 const STEPS = ['Location', 'Pin', 'Measurements', 'Photos', 'Check'];
 
@@ -73,45 +74,49 @@ export function viewProjects(ctx) {
   const { main, sess } = ctx;
   const me = db.operative(sess.operativeId);
   const sites = db.sitesFor(sess);
-  const draft = db.S().draft;
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const key = 'injectatrace.todaySite';
+  let cur = sites.find((x) => x.id === readJSON(key, '')) || sites[0];
   const hr = new Date().getHours();
+  const draft = db.S().draft;
+  if (!cur) { main.innerHTML = `<h1>Hello, ${esc(me.name.split(' ')[0])}</h1><div class="card empty">No live jobs assigned to you yet.</div>`; setAction(main, null); return; }
+
+  const signed = db.ramsSigned(cur, sess.operativeId);
+  const d = db.dayFor(cur.id);
+  const mine = db.S().pins.filter((p) => p.operative === sess.operativeId);
+  const todayN = mine.filter((p) => p.siteId === cur.id && new Date(p.createdAt).toDateString() === new Date().toDateString()).length;
+  const rework = mine.filter((p) => p.qa === 'rejected');
+  const next = !signed ? { label: `Sign RAMS rev ${cur.rams.rev}`, icon: I.pen, act: 'rams' }
+    : !d?.am ? { label: 'Record AM checks', icon: I.daily, href: `#/daily?site=${cur.id}` }
+    : hr >= 12 && !d?.pm ? { label: 'Record PM checks', icon: I.daily, href: `#/daily?site=${cur.id}` }
+    : { label: 'Add hold point', icon: I.capture, href: `#/capture?site=${cur.id}` };
+  const step = (ok, label, wait) => `<span class="chip" style="background:${ok ? 'rgba(46,160,96,.22)' : 'rgba(255,255,255,.1)'};color:#fff">${ok ? I.check : wait ? I.clock : '<span class="dot" style="color:var(--orange)"></span>'}${label}</span>`;
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
   main.innerHTML = `
-    <p class="eyebrow">${hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'}, ${esc(me.name.split(' ')[0])}</p>
-    <div class="pagehead"><h1>Your sites</h1></div>
-    ${!standalone && installEvt ? `
-      <div class="card install"><img src="icons/icon-192.png" alt="">
-        <div style="flex:1"><strong>Add to home screen</strong><div class="muted small">Full screen, works with no signal.</div></div>
-        <button class="btn sm primary" id="install">Install</button></div>` : ''}
-    ${draft?.siteId ? `
-      <a class="card cardlink warn" href="#/capture">
-        <p class="eyebrow">Unsaved hold point</p>
-        <div class="spread"><strong>${esc(db.site(draft.siteId)?.name)} · step ${draft.step + 1} of 5</strong>${I.chev.replace('<svg', '<svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"')}</div>
-      </a>` : ''}
-    <div class="stack grid2">${sites.map((st) => {
-      const s = db.siteStats(st);
-      const signed = db.ramsSigned(st, sess.operativeId);
-      const d = db.dayFor(st.id);
-      return `
-        <article class="card">
-          <p class="eyebrow">Project · FR ${st.fireRating} min</p>
-          <h2 style="margin-bottom:2px">${esc(st.name)}</h2>
-          <p class="muted small">${esc(st.address)}</p>
-          <ul class="list" style="margin:8px 0 14px">
-            ${row(`RAMS rev ${st.rams.rev}`, signed ? done('Signed') : needed)}
-            ${row('AM checks', d?.am ? done(time(d.am.at)) : needed)}
-            ${row('PM checks', d?.pm ? done(time(d.pm.at)) : hr < 12 ? '<span class="muted">After 12:00</span>' : needed)}
-            ${row('Hold points', `<span class="mono">${s.pins} / ${st.targetPins}</span>`)}
-          </ul>
-          ${signed
-            ? `<div class="row" style="flex-wrap:nowrap"><a class="btn primary" style="flex:1.4" href="#/capture?site=${st.id}">${I.capture}Add hold point</a><a class="btn" style="flex:1" href="#/daily?site=${st.id}">Daily checks</a></div>`
-            : `<button class="btn accent block" data-rams="${st.id}">${I.pen}Sign RAMS rev ${st.rams.rev}</button>`}
-        </article>`;
-    }).join('') || '<p class="empty card">No live sites assigned to you.</p>'}</div>`;
+    <p class="eyebrow">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+    <h1>${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}, ${esc(me.name.split(' ')[0])}</h1>
+    <section class="hero">
+      <p class="eyebrow">Today's job · FR ${cur.fireRating} min</p>
+      <h2 style="margin:0 0 2px">${esc(cur.name)}</h2>
+      <p class="sub small" style="margin:0">${esc(cur.address)}</p>
+      <div class="row" style="gap:8px;margin:16px 0">${step(signed, 'RAMS')}${step(!!d?.am, 'AM checks')}${step(!!d?.pm, 'PM checks', hr < 12)}</div>
+      ${next.href ? `<a class="btn accent block" href="${next.href}">${next.icon}${next.label}</a>` : `<button class="btn accent block" id="next">${next.icon}${next.label}</button>`}
+    </section>
+    ${draft?.siteId ? `<div class="group">${rowItem({ href: '#/capture', lead: iconBubble(I.capture, 'orange'), title: 'Finish your unsaved hold point', sub: `${esc(db.site(draft.siteId)?.name)} · step ${draft.step + 1} of 5` })}</div>` : ''}
+    <div class="tiles">
+      ${tile({ href: signed ? `#/capture?site=${cur.id}` : '', icon: I.capture, title: 'Add hold point', sub: `${todayN} today on this job`, tone: 'navy', attrs: signed ? '' : 'data-rams' })}
+      ${tile({ href: `#/daily?site=${cur.id}`, icon: I.daily, title: 'Daily checks', sub: d?.am && d?.pm ? 'AM + PM done' : 'Temps, H&amp;S, hours', tone: d?.am && (d?.pm || hr < 12) ? 'green' : 'orange' })}
+      ${tile({ href: '#/records', icon: I.records, title: 'My records', sub: `${mine.filter((p) => p.qa === 'pending').length} awaiting QA`, tone: rework.length ? 'red' : 'navy', badge: rework.length ? `<span class="chip c-red">${rework.length} rework</span>` : '' })}
+      ${tile({ icon: I.pen, title: 'RAMS', sub: signed ? `Rev ${cur.rams.rev} signed this week` : 'Not signed this week', tone: signed ? 'green' : 'orange', attrs: 'data-rams' })}
+    </div>
+    ${sites.length > 1 ? `${sectionHead('Your other jobs')}<div class="group">${sites.filter((x) => x !== cur).map((x) => rowItem({ lead: iconBubble(I.sites, 'slate'), title: esc(x.name), sub: `${esc(x.address)} · FR ${x.fireRating}`, trail: '<span class="btn sm">Switch</span>', attrs: `data-switch="${x.id}" role="button" tabindex="0" style="cursor:pointer"` })).join('')}</div>` : ''}
+    ${!standalone && installEvt ? `<div class="group" style="margin-top:14px">${rowItem({ lead: '<img src="icons/icon-192.png" alt="" style="width:44px;height:44px;border-radius:12px">', title: 'Add to home screen', sub: 'Full screen, works with no signal', trail: '<button class="btn sm primary" id="install">Install</button>' })}</div>` : ''}`;
 
+  const sign = () => (signed ? toast(`RAMS rev ${cur.rams.rev} already signed this week`) : ramsSheet(cur, sess.operativeId, ctx.render));
+  main.querySelector('#next')?.addEventListener('click', sign);
+  main.querySelectorAll('[data-rams]').forEach((b) => b.addEventListener('click', sign));
+  main.querySelectorAll('[data-switch]').forEach((r) => r.addEventListener('click', () => { writeJSON(key, r.dataset.switch); ctx.render(); window.scrollTo(0, 0); }));
   main.querySelector('#install')?.addEventListener('click', async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; ctx.render(); });
-  main.querySelectorAll('[data-rams]').forEach((b) => b.addEventListener('click', () => ramsSheet(db.site(b.dataset.rams), sess.operativeId, ctx.render)));
   setAction(main, null);
 }
 
@@ -404,28 +409,19 @@ export function viewDaily(ctx, params) {
   const checks = d?.checks?.filter(Boolean).length || 0;
   const blocked = !db.ramsSigned(st, sess.operativeId);
 
-  const tile = (id, title, sub, ok, icon) => `
-    <button type="button" class="card cardlink" data-open="${id}" style="width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;margin:0;min-height:96px" ${blocked ? 'disabled' : ''}>
-      <div class="spread top">
-        <div style="display:flex;gap:14px;align-items:flex-start">
-          <span style="width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;background:${ok ? 'var(--green-bg)' : 'var(--tint)'};color:${ok ? 'var(--green)' : 'var(--navy)'}">${icon.replace('<svg', '<svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"')}</span>
-          <div><h3 style="margin:2px 0 2px">${title}</h3><div class="muted small">${sub}</div></div>
-        </div>
-        ${ok ? `<span class="chip c-green">${I.check}Done</span>` : '<span class="chip c-orange"><span class="dot" style="color:var(--orange)"></span>Needed</span>'}
-      </div>
-    </button>`;
+  const t = (id, title, sub, ok, icon) => tile({ icon, title, sub, tone: ok ? 'green' : 'orange', badge: ok ? `<span class="chip c-green">${I.check}Done</span>` : '<span class="chip c-orange">To do</span>', attrs: `data-open="${id}" ${blocked ? 'disabled' : ''}` });
 
   main.innerHTML = `
-    <p class="eyebrow">Daily record · <span class="mono">${new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span></p>
+    <p class="eyebrow">Daily record · ${new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
     <div class="pagehead"><h1>Daily checks</h1></div>
     ${sites.length > 1 ? `<div class="field"><label for="dsite" class="sr">Site</label><select id="dsite">${sites.map((x) => `<option value="${x.id}" ${x.id === st.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : `<p><strong>${esc(st.name)}</strong></p>`}
     ${blocked ? `<div class="card warn"><p><strong>Sign this week's RAMS (rev ${st.rams.rev}) first.</strong></p><button class="btn accent block" id="sign">${I.pen}Sign RAMS rev ${st.rams.rev}</button></div>` : ''}
-    <div class="stack grid2">
-      ${tile('am', 'AM temperatures', d?.am ? `Recorded ${time(d.am.at)} · GPS logged` : 'Ambient, cavity, pail, storage', !!d?.am, I.daily)}
-      ${tile('pm', 'PM temperatures', d?.pm ? `Recorded ${time(d.pm.at)} · GPS logged` : 'Ambient, cavity, pail, storage', !!d?.pm, I.daily)}
-      ${tile('hs', 'H&amp;S', d ? `${checks}/${db.HS_CHECKS.length} checks${d.toolbox ? ' · toolbox talk' : ''}${d.incident ? ' · incident logged' : ''}` : 'Checklist, toolbox talk, incidents', checks === db.HS_CHECKS.length, I.qa)}
-      ${tile('hours', 'Hours worked', hrs ? `${hrs} h logged for ${Object.keys(d.hours).length} operatives` : 'For weekly reporting', hrs > 0, I.clock)}
-      ${tile('diary', 'Video diary', d?.diary ? 'Recorded' : '30 seconds on today\'s works', !!d?.diary, I.video)}
+    <div class="tiles t3">
+      ${t('am', 'AM temperatures', d?.am ? `Recorded ${time(d.am.at)} · GPS logged` : 'Ambient, cavity, pail, storage', !!d?.am, I.daily)}
+      ${t('pm', 'PM temperatures', d?.pm ? `Recorded ${time(d.pm.at)} · GPS logged` : 'Ambient, cavity, pail, storage', !!d?.pm, I.daily)}
+      ${t('hs', 'H&amp;S', d ? `${checks}/${db.HS_CHECKS.length} checks${d.toolbox ? ' · toolbox talk' : ''}${d.incident ? ' · incident logged' : ''}` : 'Checklist, toolbox talk, incidents', checks === db.HS_CHECKS.length, I.qa)}
+      ${t('hours', 'Hours worked', hrs ? `${hrs} h logged for ${Object.keys(d.hours).length} operatives` : 'For weekly reporting', hrs > 0, I.clock)}
+      ${t('diary', 'Video diary', d?.diary ? 'Recorded' : '30 seconds on today\'s works', !!d?.diary, I.video)}
     </div>`;
 
   main.querySelector('#dsite')?.addEventListener('change', (e) => { location.hash = `#/daily?site=${e.target.value}`; });
@@ -538,31 +534,12 @@ export function viewRecords(ctx, params) {
   const { main, sess } = ctx;
   const f = params.get('f') || 'all';
   const mine = db.S().pins.filter((p) => p.operative === sess.operativeId).sort((a, b) => b.createdAt - a.createdAt);
-  const counts = { all: mine.length, pending: 0, rejected: 0, approved: 0 };
-  mine.forEach((p) => counts[p.qa]++);
+  const n = (k) => mine.filter((p) => k === 'all' || p.qa === k).length;
   const list = mine.filter((p) => f === 'all' || p.qa === f).slice(0, 80);
-  const tabs = [['all', 'All'], ['rejected', 'Rework'], ['pending', 'Awaiting QA'], ['approved', 'Passed']];
-
   main.innerHTML = `
-    <p class="eyebrow">Your hold points</p>
-    <div class="pagehead"><h1>Records</h1></div>
-    <nav class="tabs" aria-label="Filter">${tabs.map(([k, l]) => `<a href="#/records?f=${k}" ${k === f ? 'aria-current="page"' : ''}>${l}${k === 'rejected' && counts.rejected ? ` <span class="count">${counts.rejected}</span>` : ` <span class="mono small">${counts[k]}</span>`}</a>`).join('')}</nav>
-    <div class="stack">${list.map((p) => pinCard(p)).join('') || '<p class="empty card">Nothing here.</p>'}</div>`;
+    <div class="pagehead"><div><p class="eyebrow">Your hold points</p><h1>Records</h1></div></div>
+    <nav class="seg" aria-label="Filter">${[['all', 'All'], ['rejected', 'Rework'], ['pending', 'In QA'], ['approved', 'Passed']].map(([k, l]) => `<a href="#/records?f=${k}" ${k === f ? 'aria-current="page"' : ''}>${l} <span class="n" style="${k === 'rejected' && n(k) ? 'color:var(--red)' : ''}">${n(k)}</span></a>`).join('')}</nav>
+    ${f === 'rejected' && list.length ? '<p class="muted small">Tap one to see what QA asked for, add photos and resubmit.</p>' : ''}
+    <div class="group">${list.map((p) => pinRow(p, { showSite: true })).join('') || '<div class="empty">Nothing here.</div>'}</div>`;
   setAction(main, null);
 }
-
-export function pinCard(p, { showSite = true } = {}) {
-  const st = db.site(p.siteId);
-  const el = db.elevation(st, p.elevationId);
-  const gaps = db.photoGaps(p).length;
-  return `
-    <a class="card cardlink" href="#/pin/${p.id}">
-      <div class="spread"><p class="eyebrow" style="margin:0">${showSite ? `${esc(st.name)}` : esc(el?.name)}</p><span class="muted small">${ago(p.createdAt)}</span></div>
-      <h3 style="margin:6px 0 2px"><span class="mono">${db.pinLabel(p)}</span>${showSite ? ` · ${esc(el?.name)}` : ''} · ${esc(p.level)}</h3>
-      <p class="muted small" style="margin:0 0 10px">${num(p.length)} m · <span class="mono">${p.socks.map((s) => `${s}mm`).join('+')}</span> · ${p.pinQty} pins</p>
-      <div class="row" style="gap:8px">${qaChip(p.qa)}${gaps ? `<span class="chip c-red">${I.camera}${gaps} photo gap${gaps > 1 ? 's' : ''}</span>` : ''}</div>
-      ${p.qa === 'rejected' && p.qaNote ? `<p class="small" style="margin:10px 0 0;padding:8px 10px;border-radius:10px;background:var(--red-bg);color:var(--red);font-weight:600">${esc(p.qaNote)}</p>` : ''}
-    </a>`;
-}
-
-export { wordmark };

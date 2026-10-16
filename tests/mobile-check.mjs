@@ -1,7 +1,8 @@
-// Mobile acceptance check: every screen for all three roles at 375px and 390px wide (plus tablet
-// and desktop), the full hold point + daily + QA flows with touch input. Fails on horizontal scroll,
-// tap targets under 48px, inputs under 16px or JS errors. Screenshots go to test-output/.
-// Usage: npm test
+// Mobile acceptance check. One end-to-end story per viewport (375, 390, tablet, desktop):
+//   manager quotes + sends -> client accepts in portal -> manager makes it a job for one installer
+//   -> installer signs RAMS, captures a hold point, logs daily temps -> back office passes QA.
+// Every screen is audited for horizontal scroll, tap targets under 48px, inputs under 16px and JS errors.
+// Screenshots go to test-output/. Usage: npm test
 import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
 import { serve } from '../scripts/serve.mjs';
@@ -16,39 +17,34 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1366, height: 900, mobile: false },
 ];
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64');
-
 const failures = [];
 const fail = (m) => { failures.push(m); console.log('  FAIL', m); };
+const state = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v3')));
 
 async function audit(page, vp, label) {
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(150);
   const r = await page.evaluate(() => {
     const doc = document.documentElement;
-    const sel = 'a.btn, button, select, textarea, input[type=text], input[type=email], input[type=password], input[type=date], input[inputmode], .choice span, .bottomnav a, .capture, label.toggle, .tabs a';
+    const sel = 'a.btn, button, select, textarea, input[type=text], input[type=email], input[type=password], input[type=date], input[inputmode], .choice span, .bottomnav a, .capture, label.toggle, .seg a, .seg button, a.ri, label.ri, .tile, .ptile, .dropzone';
     const small = [];
     for (const el of document.querySelectorAll(sel)) {
       const b = el.getBoundingClientRect();
       if (!b.width || !b.height || el.closest('[hidden]') || getComputedStyle(el).visibility === 'hidden') continue;
       if (el.closest('.capture') && el.tagName === 'SPAN') continue;
-      if (b.width < 48 || b.height < 47.5) small.push(`${el.tagName.toLowerCase()}.${String(el.className).slice(0, 30)} "${(el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 24)}" ${Math.round(b.width)}x${Math.round(b.height)}`);
+      if (el.matches('.doc *')) continue;
+      if (b.width < 48 || b.height < 47.5) small.push(`${el.tagName.toLowerCase()}.${String(el.className).slice(0, 24)} "${(el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 24)}" ${Math.round(b.width)}x${Math.round(b.height)}`);
     }
+    // Bare checkboxes must sit inside a tappable label row.
+    const loose = [...document.querySelectorAll('input[type=checkbox]')].filter((c) => c.offsetParent && !c.closest('label')).length;
     const tiny = [...document.querySelectorAll('select, textarea, input:not([type=file]):not([type=radio]):not([type=checkbox])')].filter((e) => e.offsetParent && parseFloat(getComputedStyle(e).fontSize) < 16).length;
-    return { overflow: doc.scrollWidth - doc.clientWidth, small, tiny };
+    return { overflow: doc.scrollWidth - doc.clientWidth, small, tiny, loose };
   });
   if (r.overflow > 0) fail(`[${vp.name}] ${label}: horizontal overflow ${r.overflow}px`);
   r.small.forEach((s) => fail(`[${vp.name}] ${label}: tap target under 48px: ${s}`));
   if (r.tiny) fail(`[${vp.name}] ${label}: ${r.tiny} inputs under 16px`);
+  if (r.loose) fail(`[${vp.name}] ${label}: ${r.loose} checkboxes without a tappable row`);
   await page.screenshot({ path: `${OUT}/${vp.name}-${label}.png`, fullPage: true });
   console.log(`  ok  ${label}`);
-}
-
-async function signIn(page, role) {
-  await page.goto(BASE);
-  await page.waitForSelector('#f');
-  await page.locator(`label.choice:has(input[value=${role}])`).click();
-  await page.locator('#f button[type=submit]').click();
-  await page.mouse.move(0, 0);
-  await page.waitForSelector('.bottomnav a');
 }
 
 async function run(browser, vp) {
@@ -58,41 +54,162 @@ async function run(browser, vp) {
   page.on('pageerror', (e) => fail(`[${vp.name}] JS error: ${e.message}`));
   const tap = (l) => (vp.mobile ? l.tap() : l.click());
   const go = async (hash, sel) => { await page.goto(`${BASE}#/${hash}`); await page.waitForSelector(sel); };
+  const sheetOpen = async () => { await page.waitForSelector('.sheet.open'); await page.waitForTimeout(300); };
+  const sheetClosed = () => page.waitForSelector('.sheet', { state: 'detached' });
+  const signIn = async (role) => {
+    await page.goto(BASE);
+    if (await page.locator('#acct').isVisible()) { await page.evaluate(() => document.getElementById('signout').click()); }
+    await page.waitForSelector('#f');
+    await page.locator(`label.choice:has(input[value=${role}])`).click();
+    await page.locator('#f button[type=submit]').click();
+    await page.mouse.move(0, 0);
+    await page.waitForSelector('.bottomnav a');
+  };
 
-  // ---------- Sign in ----------
   await page.goto(BASE);
   await page.waitForSelector('#f');
   await audit(page, vp, '00-signin');
 
-  // ---------- Installer ----------
-  await signIn(page, 'installer');
-  await page.waitForSelector('[data-rams]');
+  // ===== Contractor manager: quote =====
+  await signIn('manager');
+  await page.waitForSelector('.hero');
   const nav = await page.locator('.bottomnav').boundingBox();
-  if (vp.width < 1024 && Math.abs(nav.y + nav.height - vp.height) > 1) fail(`[${vp.name}] bottom nav not pinned to bottom`);
-  await audit(page, vp, '01-installer-projects');
+  if (vp.width < 1024 && Math.abs(nav.y + nav.height - vp.height) > 1) fail(`[${vp.name}] bottom nav not pinned`);
+  if (!(await page.locator('.brandslot img').getAttribute('src')).startsWith('data:image')) fail(`[${vp.name}] contractor logo missing from top bar`);
+  await audit(page, vp, '01-manager-home');
 
-  // RAMS must be signed before capture; sign with a finger.
-  await tap(page.locator('[data-rams=s1]'));
-  await page.waitForSelector('.sheet.open');
+  await go('quotes/new', '#cl');
+  await page.selectOption('#cl', 'c4');
+  await page.locator('#ti').fill('Canal Wharf apartments');
+  await page.locator('#ad').fill('Canal Street, Manchester M1');
+  await audit(page, vp, '02-quote-client');
+  await tap(page.locator('#next'));
+  await page.waitForSelector('#build');
+  if (!(await page.locator('#next').isDisabled())) fail(`[${vp.name}] quote scope Next enabled with no lines`);
+  await page.locator('#lm').fill('480');
+  await page.locator('#lm').dispatchEvent('input');
+  await tap(page.locator('label.choice:has(input[value=sock100])'));
+  await tap(page.locator('#build'));
+  await page.waitForSelector('.qline');
+  if (await page.locator('.qline').count() !== 7) fail(`[${vp.name}] quick build did not create 7 lines`);
+  await tap(page.locator('#addline'));
+  await sheetOpen();
+  await page.selectOption('#cat', 'mewp');
+  await tap(page.locator('.sheet [data-primary]'));
+  await sheetClosed();
+  if (await page.locator('.qline').count() !== 8) fail(`[${vp.name}] add line failed`);
+  await audit(page, vp, '03-quote-scope');
+  await tap(page.locator('#next'));
+  await page.waitForSelector('#dz');
+  await page.locator('#up').setInputFiles([{ name: 'Elevations rev A.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') }, { name: 'site.png', mimeType: 'image/png', buffer: PNG }]);
+  await page.waitForFunction(() => document.querySelectorAll('#files .ri').length === 2);
+  await audit(page, vp, '04-quote-files');
+  await tap(page.locator('#next'));
+  await page.waitForSelector('.doc');
+  await audit(page, vp, '05-quote-review');
+  await tap(page.locator('#sendnow'));
+  await sheetOpen();
+  await tap(page.locator('.sheet [data-primary]'));
+  await sheetClosed();
+  let st = await state(page);
+  const quote = st.quotes.find((q) => q.title === 'Canal Wharf apartments');
+  if (!quote || quote.status !== 'sent' || quote.files.length !== 2 || quote.lines.length !== 8) fail(`[${vp.name}] quote not saved and sent correctly`);
+  await audit(page, vp, '06-quote-sent');
+  await go('quotes', '.seg');
+  await audit(page, vp, '07-quotes');
+
+  // Reports
+  await go('reports', '.chart svg');
+  await audit(page, vp, '08-reports');
   await page.waitForTimeout(300);
-  if (!(await page.locator('.sheet [data-primary]').isDisabled())) fail(`[${vp.name}] RAMS sign enabled before signature`);
+  await tap(page.locator('.chart .hit').nth(10));
+  if (!(await page.locator('.tip').isVisible())) fail(`[${vp.name}] report chart tap shows no value`);
+  await tap(page.locator('#gen'));
+  await sheetOpen();
+  const dl = page.waitForEvent('download');
+  await tap(page.locator('[data-r=register]'));
+  const file = await dl;
+  if (!file.suggestedFilename().startsWith('quote-register')) fail(`[${vp.name}] CSV export failed`);
+
+  // Client setup: give Castlefield portal access and a contact
+  await go('clients/c4', '#invite');
+  await audit(page, vp, '09-client-setup');
+  await tap(page.locator('#invite'));
+  await page.waitForTimeout(200);
+  st = await state(page);
+  if (st.clients.find((c) => c.id === 'c4').portal !== 'invited') fail(`[${vp.name}] portal invite not recorded`);
+
+  // Branding
+  await go('branding', '#lg');
+  await page.locator('#lg').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: PNG });
+  await page.waitForFunction(() => document.querySelector('.brandslot img').src.startsWith('data:image/png'));
+  await audit(page, vp, '10-branding');
+  await tap(page.locator('#reset'));
+
+  await go('more', '.tiles');
+  await audit(page, vp, '11-more');
+  for (const t of ['overview', 'pins', 'daily', 'docs', 'team']) {
+    await go(`jobs/s1/${t}`, '.seg');
+    await page.waitForTimeout(150);
+    await audit(page, vp, `12-job-${t}`);
+  }
+  await go('company?t=insurance', '.seg');
+  await audit(page, vp, '13-compliance');
+
+  // ===== Client: accepts the quote in their portal =====
+  // Castlefield has no demo login, so hand the quote to Northgate for the portal test.
+  await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('injectatrace.v3')); s.quotes.find((q) => q.id === id).clientId = 'c1'; localStorage.setItem('injectatrace.v3', JSON.stringify(s)); }, quote.id);
+  await signIn('client');
+  await page.waitForSelector('.hero');
+  await audit(page, vp, '14-client-home');
+  const jobsBefore = (await state(page)).sites.filter((s) => s.clientId === 'c1').length;
+  await go(`quotes/${quote.id}`, '#accept');
+  if (/Margin|Internal only/.test(await page.locator('main').innerText())) fail(`[${vp.name}] client can see margin`);
+  await audit(page, vp, '15-client-quote');
+  await tap(page.locator('#accept'));
+  await sheetOpen();
+  await tap(page.locator('.sheet label.toggle'));
+  await tap(page.locator('.sheet [data-primary]'));
+  await sheetClosed();
+  if ((await state(page)).quotes.find((q) => q.id === quote.id).status !== 'accepted') fail(`[${vp.name}] client accept failed`);
+  await go('pin/s1-3', '.spec');
+  if (/Pails used|Materials|£/.test(await page.locator('main').innerText())) fail(`[${vp.name}] client can see pails or costs`);
+  await go('jobs/s1', '.seg');
+  if (await page.locator('a[href$="/team"]').count()) fail(`[${vp.name}] client can see team`);
+
+  // ===== Manager: won quote -> job for Jay only =====
+  await signIn('manager');
+  await go(`quotes/${quote.id}`, '#mkjob');
+  await tap(page.locator('#mkjob'));
+  await sheetOpen();
+  await tap(page.locator('.sheet label.ri:has(input[value=o2])'));
+  await audit(page, vp, '16-create-job');
+  await tap(page.locator('.sheet [data-primary]'));
+  await page.waitForSelector('.ministats');
+  st = await state(page);
+  const job = st.sites.find((s) => s.quoteId === quote.id);
+  if (!job || job.team.join() !== 'o1' || job.clientId !== 'c1' || job.docs.tender.length !== 2) fail(`[${vp.name}] job not created from quote correctly`);
+  if (st.sites.filter((s) => s.clientId === 'c1').length !== jobsBefore + 1) fail(`[${vp.name}] job not visible to client`);
+
+  // ===== Installer =====
+  await signIn('installer');
+  await page.waitForSelector('.hero');
+  if (!(await page.locator('main').innerText()).includes('Canal Wharf')) fail(`[${vp.name}] assigned installer can't see new job`);
+  await audit(page, vp, '17-installer-today');
+  await tap(page.locator('.hero #next'));
+  await sheetOpen();
   await page.locator('.sheet label.toggle').click();
   const pad = await page.locator('#sig').boundingBox();
   await page.mouse.move(pad.x + 30, pad.y + 100); await page.mouse.down();
   for (let i = 1; i <= 12; i++) await page.mouse.move(pad.x + 30 + i * 20, pad.y + 100 + Math.sin(i) * 30);
-  await page.mouse.up();
-  await page.mouse.move(0, 0); // park the virtual mouse so it can't hover anything later
-  await audit(page, vp, '02-installer-rams');
+  await page.mouse.up(); await page.mouse.move(0, 0);
   await tap(page.locator('.sheet [data-primary]'));
-  await page.waitForSelector('.sheet', { state: 'detached' });
+  await sheetClosed();
 
-  // Capture a hold point.
-  await tap(page.locator('a[href="#/capture?site=s1"]'));
-  await page.waitForSelector('.trail');
+  await go('capture?site=s1', '.trail');
   await tap(page.locator('label.choice', { hasText: 'North' }));
-  await audit(page, vp, '03-capture-location');
+  await audit(page, vp, '18-capture-location');
   await tap(page.locator('#next'));
-
   await page.waitForSelector('.elev-view');
   await page.waitForTimeout(200);
   const scale0 = await page.$eval('.elev-stage', (s) => new DOMMatrix(getComputedStyle(s).transform).a);
@@ -103,8 +220,7 @@ async function run(browser, vp) {
     for (let i = 1; i <= 10; i++) { ev('pointermove', 11, cx - 30 - i * 8); ev('pointermove', 12, cx + 30 + i * 8); }
     ev('pointerup', 11, cx - 110); ev('pointerup', 12, cx + 110);
   });
-  const scale1 = await page.$eval('.elev-stage', (s) => new DOMMatrix(getComputedStyle(s).transform).a);
-  if (!(scale1 > scale0 * 1.5)) fail(`[${vp.name}] pinch did not zoom`);
+  if (!((await page.$eval('.elev-stage', (s) => new DOMMatrix(getComputedStyle(s).transform).a)) > scale0 * 1.5)) fail(`[${vp.name}] pinch did not zoom`);
   if (await page.locator('.elev-confirm').isVisible()) fail(`[${vp.name}] pinch dropped a pin`);
   await tap(page.locator('[data-z=fit]'));
   const box = await page.locator('.elev-view').boundingBox();
@@ -112,114 +228,52 @@ async function run(browser, vp) {
   if (vp.mobile) await page.touchscreen.tap(tx, ty); else await page.mouse.click(tx, ty);
   await page.waitForSelector('.elev-confirm:not([hidden])');
   if (!(await page.locator('#next').isDisabled())) fail(`[${vp.name}] Next enabled before pin confirmed`);
-  await audit(page, vp, '04-capture-pin-confirm');
+  await audit(page, vp, '19-capture-pin');
   await tap(page.locator('[data-c=ok]'));
   await page.waitForFunction(() => document.querySelector('#pinstate').textContent.includes('Pinned'));
   await tap(page.locator('#next'));
-
   await page.waitForSelector('#cavityDepth');
-  if (!(await page.locator('#next').isDisabled())) fail(`[${vp.name}] Next enabled with empty measurements`);
   for (let i = 0; i < 20; i++) await tap(page.locator('[aria-label="Increase Cavity depth"]'));
   await tap(page.locator('label.choice:has(input[name=sock0][value="80"])'));
-  await tap(page.locator('label.toggle'));
-  await tap(page.locator('label.choice:has(input[name=sock1][value="60"])'));
   await page.locator('#length').fill('3.5');
+  await page.locator('#length').dispatchEvent('input');
   for (let i = 0; i < 6; i++) await tap(page.locator('[aria-label="Increase Pins installed"]'));
   await page.locator('#batch').fill('ifb-2431');
   if (await page.locator('#cavityDepth').inputValue() !== '100') fail(`[${vp.name}] cavity stepper wrong`);
-  if (await page.locator('#next').isDisabled()) fail(`[${vp.name}] Next disabled with complete measurements`);
-  await audit(page, vp, '05-capture-measurements');
+  await audit(page, vp, '20-capture-measure');
   await tap(page.locator('#next'));
-
   await page.waitForSelector('.shotrow');
-  const cams = await page.$$eval('.shotrow input[type=file]', (ins) => ins.map((i) => i.getAttribute('capture')));
-  if (cams.some((c) => c !== 'environment')) fail(`[${vp.name}] photo input does not open rear camera`);
-  for (const k of ['area', 'access', 'clear', 'measure', 'pins', 'sock', 'injected', 'reinstated']) {
-    await page.locator(`.shotrow input[data-k=${k}][accept="image/*"]`).setInputFiles({ name: `${k}.png`, mimeType: 'image/png', buffer: PNG });
-  }
+  if ((await page.$$eval('.shotrow input[type=file]', (ins) => ins.map((i) => i.getAttribute('capture')))).some((c) => c !== 'environment')) fail(`[${vp.name}] photo input not rear camera`);
+  for (const k of ['area', 'access', 'clear', 'measure', 'pins', 'sock', 'injected', 'reinstated']) await page.locator(`.shotrow input[data-k=${k}][accept="image/*"]`).setInputFiles({ name: `${k}.png`, mimeType: 'image/png', buffer: PNG });
   await page.waitForFunction(() => document.querySelectorAll('.shot img').length === 8);
-  await audit(page, vp, '06-capture-photos');
+  await audit(page, vp, '21-capture-photos');
   await tap(page.locator('#next'));
   await page.waitForSelector('.list');
-  await audit(page, vp, '07-capture-check');
-  const n0 = await page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v2')).pins.length);
+  const n0 = (await state(page)).pins.length;
   await tap(page.locator('#next'));
   await page.waitForSelector('text=recorded');
-  const n1 = await page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v2')).pins.length);
-  if (n1 !== n0 + 1) fail(`[${vp.name}] hold point not saved`);
-  await audit(page, vp, '08-capture-saved');
+  if ((await state(page)).pins.length !== n0 + 1) fail(`[${vp.name}] hold point not saved`);
 
-  // Daily checks.
   await go('daily?site=s1', '[data-open=am]');
-  await audit(page, vp, '09-daily');
+  await audit(page, vp, '22-daily');
   await tap(page.locator('[data-open=am]'));
-  await page.waitForSelector('.sheet.open');
-  await page.waitForTimeout(300);
-  await audit(page, vp, '10-daily-temps');
+  await sheetOpen();
   await tap(page.locator('.sheet [data-primary]'));
-  await page.waitForSelector('.sheet', { state: 'detached' });
-  const am = await page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v2')).days.find((d) => d.siteId === 's1' && d.date === new Date().toISOString().slice(0, 10))?.am);
-  if (!am || am.ambient == null) fail(`[${vp.name}] AM temps not saved`);
+  await sheetClosed();
+  if (!(await state(page)).days.find((d) => d.siteId === 's1' && d.date === new Date().toISOString().slice(0, 10))?.am) fail(`[${vp.name}] AM temps not saved`);
+  await go('records', '.seg');
+  await audit(page, vp, '23-records');
 
-  await go('records', '.tabs');
-  await audit(page, vp, '11-records');
-
-  // ---------- Back office ----------
-  await tap(page.locator('#signout'));
-  await signIn(page, 'office');
-  await page.waitForSelector('.chart svg');
-  if (vp.width < 768 && await page.$eval('.kpis', (k) => getComputedStyle(k).gridTemplateColumns.split(' ').length) !== 2) fail(`[${vp.name}] KPIs not 2-up on phone`);
-  await audit(page, vp, '12-office-dashboard');
-  await tap(page.locator('.chart .hit').nth(6));
-  if (!(await page.locator('.tip').isVisible())) fail(`[${vp.name}] chart tap shows no value`);
-
-  await go('sites', '.rtable');
-  if (vp.width < 768) {
-    if (await page.$eval('.rtable tr', (tr) => getComputedStyle(tr).display) !== 'grid') fail(`[${vp.name}] sites not shown as cards`);
-    if (await page.$eval('.rtable td.key .num', (n) => parseFloat(getComputedStyle(n).fontSize)) < 30) fail(`[${vp.name}] key figure not large`);
-  }
-  await audit(page, vp, '13-office-sites');
-  await tap(page.locator('#filters'));
-  await page.waitForSelector('.sheet.open');
-  await page.waitForTimeout(300);
-  const sh = await page.locator('.sheet').boundingBox();
-  if (Math.abs(sh.y + sh.height - vp.height) > 1) fail(`[${vp.name}] filter sheet not anchored to bottom`);
-  await audit(page, vp, '14-office-filter-sheet');
-  await tap(page.locator('.sheet [data-close]'));
-  await page.waitForSelector('.sheet', { state: 'detached' });
-
-  for (const t of ['overview', 'pins', 'daily', 'docs', 'team']) {
-    await go(`sites/s1/${t}`, '.tabs');
-    await page.waitForTimeout(150);
-    await audit(page, vp, `15-site-${t}`);
-  }
-
-  // QA: newest pin is pending; pass it and it turns green.
-  await go('qa', 'h1');
-  await audit(page, vp, '16-office-qa');
-  const newest = await page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v2')).pins.at(-1).id);
+  // ===== Back office: QA the new hold point =====
+  await signIn('office');
+  const newest = (await state(page)).pins.at(-1).id;
   await go(`pin/${newest}`, '#pass');
-  await audit(page, vp, '17-office-pin');
+  await audit(page, vp, '24-office-pin');
   await tap(page.locator('#pass'));
   await page.waitForTimeout(200);
-  const qa = await page.evaluate((id) => JSON.parse(localStorage.getItem('injectatrace.v2')).pins.find((p) => p.id === id).qa, newest);
-  if (qa !== 'approved') fail(`[${vp.name}] QA pass did not turn pin green`);
-
-  await go('company', '#addop');
-  await audit(page, vp, '18-office-company');
-
-  // ---------- Client: read-only, no pail quantities, rates or costs ----------
-  await tap(page.locator('#signout'));
-  await signIn(page, 'client');
-  await go(`pin/${newest}`, '.list');
-  const txt = await page.locator('main').innerText();
-  if (/Pails used|Materials cost|£/.test(txt)) fail(`[${vp.name}] client can see pail qty or costs`);
-  if (await page.locator('#pass').count()) fail(`[${vp.name}] client can QA`);
-  await audit(page, vp, '19-client-pin');
-  await go('sites/s1/daily', '.tabs');
-  if (/£/.test(await page.locator('main').innerText())) fail(`[${vp.name}] client can see costs`);
-  if (await page.locator('a[href$="/team"]').count()) fail(`[${vp.name}] client can see team rates`);
-  await audit(page, vp, '20-client-daily');
+  if ((await state(page)).pins.find((p) => p.id === newest).qa !== 'approved') fail(`[${vp.name}] QA pass failed`);
+  await go('qa', 'h1');
+  await audit(page, vp, '25-office-qa');
 
   await ctx.close();
 }

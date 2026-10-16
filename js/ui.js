@@ -237,3 +237,57 @@ export function signaturePad(canvas) {
     clear: () => { ctx.clearRect(0, 0, canvas.width, canvas.height); drawn = false; canvas.dispatchEvent(new Event('change')); },
   };
 }
+
+// ---------- Layout components (keep screens calm: one hero, a few tiles, grouped rows) ----------
+const COLORS = ['#183756', '#0F5C4C', '#7A3E9D', '#9A4A12', '#2F5D8A', '#4A6178'];
+export function avatar(name, size = 40) {
+  const initials = String(name || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const c = COLORS[[...String(name)].reduce((t, ch) => t + ch.charCodeAt(0), 0) % COLORS.length];
+  return `<span class="avatar" style="width:${size}px;height:${size}px;background:${c};font-size:${Math.round(size * 0.38)}px" aria-hidden="true">${esc(initials)}</span>`;
+}
+
+export function ring(pct, size = 64, label = '') {
+  const r = (size - 8) / 2, c = 2 * Math.PI * r, off = c * (1 - Math.min(100, Math.max(0, pct)) / 100);
+  return `<span class="ring" style="width:${size}px;height:${size}px" role="img" aria-label="${esc(label || `${pct}%`)}">
+    <svg viewBox="0 0 ${size} ${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="track"/><circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="val" stroke-dasharray="${c}" stroke-dashoffset="${off}"/></svg>
+    <b style="font-size:${Math.round(size * 0.26)}px">${Math.round(pct)}<small>%</small></b></span>`;
+}
+
+export const sectionHead = (title, link = '', href = '') =>
+  `<div class="section-h"><h2>${title}</h2>${link ? `<a class="btn sm ghost" href="${href}">${link}${I.chev}</a>` : ''}</div>`;
+
+// A tappable row in a grouped card: leading visual, title + one line, trailing value.
+export const rowItem = ({ href, lead = '', title, sub = '', trail = '', attrs = '' }) => {
+  // Rows with a checkbox become labels, so the whole row is the tap target.
+  const tag = href ? 'a' : /type="checkbox"/.test(trail) ? 'label' : 'div';
+  return `
+  <${tag === 'a' ? `a href="${href}"` : tag} class="ri" ${attrs} ${tag === 'label' ? 'style="cursor:pointer"' : ''}>
+    ${lead ? `<span class="ri-lead">${lead}</span>` : ''}
+    <span class="ri-main"><span class="ri-title">${title}</span>${sub ? `<span class="ri-sub">${sub}</span>` : ''}</span>
+    ${trail ? `<span class="ri-trail">${trail}</span>` : ''}
+    ${href ? `<span class="ri-chev">${I.chev}</span>` : ''}
+  </${tag}>`;
+};
+
+export const iconBubble = (icon, tone = 'navy') => `<span class="bubble b-${tone}">${icon}</span>`;
+
+export const tile = ({ href, icon, title, sub = '', badge = '', tone = 'navy', attrs = '' }) => `
+  <${href ? `a href="${href}"` : 'button type="button"'} class="tile" ${attrs}>
+    <span class="tile-top">${iconBubble(icon, tone)}${badge}</span>
+    <span class="tile-title">${title}</span>
+    ${sub ? `<span class="tile-sub">${sub}</span>` : ''}
+  </${href ? 'a' : 'button'}>`;
+
+export const spec = (items) => `<dl class="spec">${items.filter(Boolean).map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
+
+export const money = (n, dp = 0) => `£${(+n || 0).toLocaleString('en-GB', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
+export const moneyK = (n) => (Math.abs(n) >= 1e6 ? `£${(n / 1e6).toFixed(2)}m` : Math.abs(n) >= 1e4 ? `£${Math.round(n / 1000)}k` : money(n));
+export const fileSize = (b) => (b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1000))} KB`);
+
+export function downloadFile(name, text, type = 'text/csv') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+export const csv = (rows) => rows.map((r) => r.map((v) => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : (v ?? ''))).join(',')).join('\n');

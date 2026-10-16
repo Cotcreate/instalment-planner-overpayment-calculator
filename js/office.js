@@ -1,29 +1,15 @@
-// Back office (and read-only client) screens: Dashboard, Sites, Site detail, QA queue, Company.
+// Jobs, job detail, QA queue and Team & compliance. Shared by contractor manager, back office and (read-only) clients.
 import * as db from './store.js';
 import { mountElevation } from './elevation.js';
-import { barChart } from './chart.js';
 import { putFile, fileURL, downscale } from './files.js';
 import {
   esc, uid, num, I, gbp, gbpBig, date, dateShort, time, toast, setAction, openSheet, qaChip, expiryChip,
-  readJSON, writeJSON, stepper, wireSteppers,
+  readJSON, writeJSON, stepper, wireSteppers, avatar, ring, rowItem, iconBubble, sectionHead, spec, ago,
 } from './ui.js';
-import { pinCard } from './installer.js';
+import { jobRow } from './home.js';
+import { quoteRow } from './quotes.js';
 
-const DAY = 86400000;
-const isOffice = (ctx) => ctx.sess.role === 'office';
-
-function weeklyLM(siteIds) {
-  const out = [];
-  const start = new Date(); start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-  for (let i = 7; i >= 0; i--) {
-    const from = start.getTime() - i * 7 * DAY;
-    const lm = db.S().pins.filter((p) => siteIds.has(p.siteId) && p.createdAt >= from && p.createdAt < from + 7 * DAY).reduce((t, p) => t + p.length, 0);
-    const d = new Date(from);
-    out.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, detail: `w/c ${dateShort(from)}`, value: +lm.toFixed(1) });
-  }
-  return out;
-}
+const staff = (ctx) => ctx.sess.role === 'manager' || ctx.sess.role === 'office';
 
 async function uploadTo(input) {
   const f = input.files?.[0];
@@ -32,184 +18,144 @@ async function uploadTo(input) {
   await putFile(id, f.type.startsWith('image/') ? await downscale(f, 2400, 0.85).catch(() => f) : f);
   return { id, name: f.name, at: Date.now() };
 }
+const uploadIcon = (attrs, label) =>
+  `<label class="capture"><input type="file" accept="application/pdf,image/*" ${attrs} aria-label="${esc(label)}"><span class="btn iconbtn">${I.upload}</span></label>`;
 const uploadBtn = (attrs, label = 'Upload', accept = 'application/pdf,image/*') =>
   `<label class="capture"><input type="file" accept="${accept}" ${attrs} aria-label="${esc(label)}"><span class="btn sm">${I.upload}${esc(label)}</span></label>`;
 
-// ---------- Dashboard ----------
-export function viewDashboard(ctx) {
-  const { main } = ctx;
-  const office = isOffice(ctx);
-  const sites = db.S().sites.filter((s) => s.status === 'active');
-  const stats = sites.map((s) => db.siteStats(s));
-  const target = sites.reduce((t, s) => t + s.targetPins, 0);
-  const approved = stats.reduce((t, s) => t + s.approved, 0);
-  const pending = stats.reduce((t, s) => t + s.pending, 0);
-  const rejected = stats.reduce((t, s) => t + s.rejected, 0);
-  const lm = stats.reduce((t, s) => t + s.lm, 0);
-  const alerts = office ? db.alerts() : [];
-  const queue = db.S().pins.filter((p) => p.qa === 'pending').sort((a, b) => a.createdAt - b.createdAt);
-
-  main.innerHTML = `
-    <p class="eyebrow">${office ? esc(db.S().company.name) : 'Client view'} · ${sites.length} live sites</p>
-    <div class="pagehead"><h1>Overview</h1></div>
-    <section class="kpis" aria-label="Summary">
-      <div class="kpi"><div class="v">${target ? Math.round((approved / target) * 100) : 0}<small>%</small></div><div class="k">QA passed</div></div>
-      ${office ? `<a class="kpi cardlink ${pending ? 'alert' : ''}" href="#/qa"><div class="v">${pending}</div><div class="k">Awaiting QA →</div></a>` : `<div class="kpi"><div class="v">${approved}</div><div class="k">Hold points passed</div></div>`}
-      <div class="kpi ${rejected ? 'alert' : ''}"><div class="v">${rejected}</div><div class="k">In rework</div></div>
-      <div class="kpi"><div class="v">${num(lm, 0)}<small>m</small></div><div class="k">Injected to date</div></div>
-    </section>
-    <div class="split">
-      <section class="card">
-        <p class="eyebrow">Linear metres injected per week</p>
-        <p class="muted small">Live sites, last 8 weeks. Tap a bar for detail.</p>
-        <div id="chart"></div>
-      </section>
-      <div>
-        ${office ? `
-        <section class="card">
-          <div class="spread"><p class="eyebrow" style="margin:0">Needs attention</p><span class="chip ${alerts.length ? 'c-red' : 'c-green'}">${alerts.length}</span></div>
-          <ul class="list" style="margin-top:6px">${alerts.slice(0, 6).map((a) => `
-            <li><a class="rowlink" href="${a.href}"><span style="display:flex;gap:10px;align-items:center;min-width:0"><span class="dot" style="color:${a.kind === 'soon' ? 'var(--orange)' : 'var(--red)'}"></span><span style="min-width:0">${esc(a.text)}${a.when ? ` <span class="muted small">· ${a.kind === 'expired' ? 'expired' : 'expires'} ${dateShort(a.when)}</span>` : ''}</span></span>${I.chev.replace('<svg', '<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="flex:none"')}</a></li>`).join('') || '<li>All clear.</li>'}
-          </ul>
-        </section>
-        <section class="card">
-          <div class="spread"><p class="eyebrow" style="margin:0">QA queue</p><a class="btn sm ghost" href="#/qa">See all</a></div>
-          <div class="stack" style="margin-top:8px">${queue.slice(0, 3).map((p) => pinCard(p)).join('') || '<p class="muted">Nothing waiting.</p>'}</div>
-        </section>` : sitesTable(ctx, sites)}
-      </div>
-    </div>`;
-
-  ctx.cleanups.push(barChart(main.querySelector('#chart'), { data: weeklyLM(new Set(sites.map((s) => s.id))), unit: 'm', label: 'Linear metres injected per week' }).destroy);
-  setAction(main, null);
-}
-
-// ---------- Sites ----------
-const DEFAULT_F = { status: ['active'], client: 'all', issues: false };
-
-function sitesTable(ctx, list) {
-  const office = isOffice(ctx);
-  if (!list.length) return '<p class="empty card">No sites match these filters.</p>';
-  return `
-    <table class="rtable">
-      <thead><tr><th>Site</th><th>QA passed</th><th>${office ? 'Awaiting QA' : 'Injected'}</th><th>Fire rating</th><th>Rework</th><th><span class="sr">Open</span></th></tr></thead>
-      <tbody>${list.map((st) => {
-        const s = db.siteStats(st);
-        return `
-        <tr>
-          <td class="name"><a class="title" href="#/sites/${st.id}">${esc(st.name)}</a><div class="muted small">${esc(st.client)} · ${st.status === 'active' ? 'Live' : 'Complete'}</div></td>
-          <td class="key" data-label="QA passed"><div class="num">${s.pct}<small>%</small></div><div class="progress"><i style="width:${s.pct}%"></i></div><div class="muted small" style="margin-top:4px">${s.approved} of ${st.targetPins}</div></td>
-          ${office
-            ? `<td class="key" data-label="Awaiting QA"><div class="num" style="${s.pending ? 'color:var(--red)' : ''}">${s.pending}</div><div class="muted small">hold points</div></td>`
-            : `<td class="key" data-label="Injected"><div class="num">${num(s.lm, 0)}<small>m</small></div></td>`}
-          <td data-label="Fire rating"><span class="mono">${st.fireRating} min</span></td>
-          <td data-label="Rework">${s.rejected}${office && (s.missingDocs.length || s.unsigned.length) ? ` · <span style="color:var(--red);font-weight:700">${s.missingDocs.length + s.unsigned.length} issue${s.missingDocs.length + s.unsigned.length > 1 ? 's' : ''}</span>` : ''}</td>
-          <td class="go"><a class="btn sm block" href="#/sites/${st.id}">Open site</a></td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>`;
-}
-
-export function viewSites(ctx) {
-  const { main } = ctx;
-  const f = { ...DEFAULT_F, ...readJSON('injectatrace.siteFilters', {}) };
-  const list = db.S().sites.filter((st) => f.status.includes(st.status) && (f.client === 'all' || st.client === f.client)
-    && (!f.issues || (() => { const s = db.siteStats(st); return s.rejected || s.missingDocs.length || s.unsigned.length; })()));
-  const n = (f.status.join() !== DEFAULT_F.status.join() ? 1 : 0) + (f.client !== 'all' ? 1 : 0) + (f.issues ? 1 : 0);
-
-  main.innerHTML = `
-    <p class="eyebrow">${list.length} site${list.length === 1 ? '' : 's'}</p>
-    <div class="pagehead"><h1>Sites</h1><button type="button" class="btn sm" id="filters" aria-haspopup="dialog">${I.filter}Filter${n ? ` (${n})` : ''}</button></div>
-    ${sitesTable(ctx, list)}`;
-
-  main.querySelector('#filters').addEventListener('click', () => {
-    const clients = [...new Set(db.S().sites.map((s) => s.client))];
-    openSheet({
-      title: 'Filter sites',
-      body: `
-        <fieldset class="field"><legend>Status</legend>
-          <div class="choices c2">${[['active', 'Live'], ['complete', 'Complete']].map(([k, l]) => `<label class="choice"><input type="checkbox" name="st" value="${k}" ${f.status.includes(k) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
-        <div class="field"><label for="fc">Client</label><select id="fc"><option value="all">All clients</option>${clients.map((c) => `<option ${c === f.client ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
-        <label class="toggle"><span>Only sites with issues</span><input type="checkbox" id="fi" ${f.issues ? 'checked' : ''}></label>`,
-      primary: 'Show sites', secondary: 'Reset',
-      onPrimary: (sh) => {
-        writeJSON('injectatrace.siteFilters', { status: [...sh.querySelectorAll('[name=st]:checked')].map((x) => x.value), client: sh.querySelector('#fc').value, issues: sh.querySelector('#fi').checked });
-        viewSites(ctx);
-      },
-      onSecondary: (sh) => {
-        sh.querySelectorAll('[name=st]').forEach((x) => { x.checked = DEFAULT_F.status.includes(x.value); });
-        sh.querySelector('#fc').value = 'all';
-        sh.querySelector('#fi').checked = false;
-      },
-    });
+export function pinRow(p, { showSite = false } = {}) {
+  const st = db.site(p.siteId);
+  const el = db.elevation(st, p.elevationId);
+  const gaps = db.photoGaps(p).length;
+  return rowItem({
+    href: `#/pin/${p.id}`,
+    lead: iconBubble(I.capture, p.qa === 'approved' ? 'green' : 'red'),
+    title: `<span class="mono">${db.pinLabel(p)}</span> · ${esc(el?.name)} · ${esc(p.level)}`,
+    sub: `${showSite ? `${esc(st.name)} · ` : ''}${num(p.length)} m · ${p.socks.map((s) => `${s}mm`).join('+')}${gaps ? ` · <span style="color:var(--red);font-weight:700">${gaps} photo gap${gaps > 1 ? 's' : ''}</span>` : ` · ${ago(p.createdAt)}`}`,
+    trail: qaChip(p.qa),
   });
+}
+
+// ---------- Jobs ----------
+export function viewJobs(ctx, params) {
+  const { main, sess } = ctx;
+  const isStaff = staff(ctx);
+  const f = params.get('f') || 'active';
+  const fc = readJSON('injectatrace.jobClient', 'all');
+  const all = db.sitesFor(sess).filter((s) => !isStaff || fc === 'all' || s.clientId === fc);
+  const list = all.filter((s) => f === 'all' || s.status === f);
+
+  main.innerHTML = `
+    <div class="pagehead"><div><p class="eyebrow">${list.length} job${list.length === 1 ? '' : 's'}</p><h1>Jobs</h1></div>
+      ${isStaff ? `<button class="btn primary sm" id="newjob">${I.plus}New job</button>` : ''}</div>
+    <div class="spread" style="gap:10px;align-items:flex-start">
+      <nav class="seg" aria-label="Filter jobs" style="flex:1">${[['active', 'Live'], ['complete', 'Complete'], ['all', 'All']].map(([k, l]) => `<a href="#/jobs?f=${k}" ${k === f ? 'aria-current="page"' : ''}>${l} <span class="n">${all.filter((s) => k === 'all' || s.status === k).length}</span></a>`).join('')}</nav>
+      ${isStaff ? `<button type="button" class="btn iconbtn" id="filters" aria-label="Filter by client" style="margin-top:2px;background:${fc !== 'all' ? 'var(--navy)' : 'var(--white)'};color:${fc !== 'all' ? '#fff' : 'var(--navy)'}">${I.filter}</button>` : ''}
+    </div>
+    <div class="group">${list.map((s) => jobRow(s, { sess })).join('') || '<div class="empty">No jobs here.</div>'}</div>`;
+
+  main.querySelector('#filters')?.addEventListener('click', () => openSheet({
+    title: 'Filter jobs',
+    body: `<div class="field"><label for="fc">Client</label><select id="fc"><option value="all">All clients</option>${db.S().clients.map((c) => `<option value="${c.id}" ${c.id === fc ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`,
+    primary: 'Show jobs', secondary: 'Reset',
+    onPrimary: (sh) => { writeJSON('injectatrace.jobClient', sh.querySelector('#fc').value); ctx.render(); },
+    onSecondary: (sh) => { sh.querySelector('#fc').value = 'all'; },
+  }));
+  main.querySelector('#newjob')?.addEventListener('click', () => newJobSheet(ctx));
   setAction(main, null);
 }
 
-// ---------- Site detail ----------
-export async function viewSite(ctx, id, tab = 'overview', params) {
-  const { main } = ctx;
-  const office = isOffice(ctx);
+function newJobSheet(ctx) {
+  openSheet({
+    title: 'New job',
+    body: `
+      <div class="field"><label for="jn">Job name</label><input id="jn" type="text"></div>
+      <div class="field"><label for="jc">Client</label><select id="jc"><option value="">Choose client…</option>${db.S().clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label for="ja">Site address</label><input id="ja" type="text"></div>
+      <fieldset class="field"><legend>Fire rating</legend><div class="choices c2">${db.FIRE_RATINGS.map((r, i) => `<label class="choice"><input type="radio" name="fr" value="${r}" ${i === 1 ? 'checked' : ''}><span>${r} min</span></label>`).join('')}</div></fieldset>
+      <fieldset class="field"><legend>Elevations</legend><div class="choices c2">${['North', 'East', 'South', 'West'].map((e) => `<label class="choice"><input type="checkbox" name="el" value="${e}" checked><span>${e}</span></label>`).join('')}</div></fieldset>
+      <fieldset class="field"><legend>Assign installers</legend><div class="group" style="margin:0">${db.S().operatives.map((o) => rowItem({ lead: avatar(o.name, 36), title: esc(o.name), sub: esc(o.role), trail: `<input type="checkbox" name="op" value="${o.id}" aria-label="Assign ${esc(o.name)}" style="width:24px;height:24px">` })).join('')}</div></fieldset>`,
+    primary: 'Create job',
+    onPrimary: (sh) => {
+      const name = sh.querySelector('#jn').value.trim();
+      const clientId = sh.querySelector('#jc').value;
+      const team = [...sh.querySelectorAll('[name=op]:checked')].map((x) => x.value);
+      const els = [...sh.querySelectorAll('[name=el]:checked')].map((x) => x.value);
+      if (!name || !clientId || !team.length || !els.length) { toast('Add a name, client, elevation and installer'); return false; }
+      const st = db.createJob({ name, clientId, address: sh.querySelector('#ja').value.trim(), fireRating: +sh.querySelector('[name=fr]:checked').value, elevations: els, team });
+      toast('Job created'); location.hash = `#/jobs/${st.id}`;
+    },
+  });
+}
+
+// ---------- Job detail ----------
+export async function viewJob(ctx, id, tab = 'overview', params) {
+  const { main, sess } = ctx;
+  const isStaff = staff(ctx);
   const st = db.site(id);
-  if (!st) { main.innerHTML = '<p class="empty card">Site not found.</p>'; setAction(main, null); return; }
+  if (!st || !db.sitesFor(sess).includes(st)) { main.innerHTML = '<p class="empty card">Job not found.</p>'; setAction(main, null); return; }
   const s = db.siteStats(st);
-  const tabs = [['overview', 'Overview'], ['pins', 'Hold points', s.pending], ['daily', 'Daily'], ['docs', 'Documents', office ? s.missingDocs.length + s.unsigned.length : 0], ...(office ? [['team', 'Team']] : [])];
+  const issues = isStaff ? s.missingDocs.length + s.unsigned.length : 0;
+  const tabs = [['overview', 'Overview'], ['pins', 'Hold points'], ['daily', 'Daily'], ['docs', 'Documents'], ...(isStaff ? [['team', 'Team']] : [])];
   if (!tabs.find((t) => t[0] === tab)) tab = 'overview';
 
   main.innerHTML = `
-    <a class="btn sm ghost" href="#/sites" style="margin:-8px 0 8px -12px">${I.back}Sites</a>
-    <p class="eyebrow">${esc(st.client)} · FR ${st.fireRating} min</p>
-    <h1>${esc(st.name)}</h1>
-    <p class="muted" style="margin-top:-4px">${esc(st.address)}</p>
-    <nav class="tabs" aria-label="Site sections">${tabs.map(([k, l, c]) => `<a href="#/sites/${st.id}/${k}" ${k === tab ? 'aria-current="page"' : ''}>${l}${c ? ` <span class="count">${c}</span>` : ''}</a>`).join('')}</nav>
+    <a class="btn sm ghost" href="#/jobs" style="margin:-8px 0 8px -12px">${I.back}Jobs</a>
+    <p class="eyebrow">${esc(db.clientName(st))} · FR ${st.fireRating} min</p>
+    <h1 style="margin-bottom:4px">${esc(st.name)}</h1>
+    <p class="muted">${esc(st.address || '')}</p>
+    <section class="card" style="display:flex;gap:16px;align-items:center">
+      ${ring(s.pct, 76, `${s.pct}% QA passed`)}
+      <dl class="ministats">
+        <div><dt>Passed</dt><dd>${s.approved}<small>/${st.targetPins}</small></dd></div>
+        <div><dt>${isStaff ? 'To QA' : 'Review'}</dt><dd style="${s.pending && isStaff ? 'color:var(--red)' : ''}">${s.pending}</dd></div>
+        <div><dt>Injected</dt><dd>${Math.round(s.lm)}<small>m</small></dd></div>
+      </dl>
+    </section>
+    <nav class="seg" aria-label="Job sections">${tabs.map(([k, l]) => `<a href="#/jobs/${st.id}/${k}" ${k === tab ? 'aria-current="page"' : ''}>${l}${k === 'pins' && s.pending && isStaff ? ` <span class="chip c-red" style="padding:1px 7px;font-size:12px">${s.pending}</span>` : ''}${k === 'docs' && issues ? ` <span class="chip c-amber" style="padding:1px 7px;font-size:12px">${issues}</span>` : ''}</a>`).join('')}</nav>
     <div id="tab"></div>`;
   const host = main.querySelector('#tab');
+  main.querySelector('.seg [aria-current]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
   setAction(main, null);
 
-  if (tab === 'overview') await siteOverview(ctx, st, s, host);
-  if (tab === 'pins') sitePins(ctx, st, host, params);
-  if (tab === 'daily') siteDaily(ctx, st, host);
-  if (tab === 'docs') siteDocs(ctx, st, host);
-  if (tab === 'team') siteTeam(ctx, st, host);
+  if (tab === 'overview') await jobOverview(ctx, st, host);
+  if (tab === 'pins') jobPins(ctx, st, host, params);
+  if (tab === 'daily') jobDaily(ctx, st, host);
+  if (tab === 'docs') jobDocs(ctx, st, host);
+  if (tab === 'team') jobTeam(ctx, st, host);
 }
 
-async function siteOverview(ctx, st, s, host) {
-  const office = isOffice(ctx);
+async function jobOverview(ctx, st, host) {
+  const isStaff = staff(ctx);
   const key = `injectatrace.elev.${st.id}`;
-  let el = db.elevation(st, readJSON(key, st.elevations[0].id)) || st.elevations[0];
+  const el = db.elevation(st, readJSON(key, st.elevations[0].id)) || st.elevations[0];
   const pins = db.pinsFor(st.id).filter((p) => p.elevationId === el.id);
+  const q = st.quoteId ? db.quote(st.quoteId) : null;
   host.innerHTML = `
-    <section class="kpis">
-      <div class="kpi"><div class="v">${s.pct}<small>%</small></div><div class="k">QA passed · ${s.approved}/${st.targetPins}</div></div>
-      <div class="kpi ${s.pending ? 'alert' : ''}"><div class="v">${s.pending}</div><div class="k">Awaiting QA</div></div>
-      <div class="kpi"><div class="v">${num(s.lm, 0)}<small>m</small></div><div class="k">Injected</div></div>
-      ${office ? `<div class="kpi"><div class="v">${s.pails}</div><div class="k">Pails used</div></div>` : `<div class="kpi ${s.rejected ? 'alert' : ''}"><div class="v">${s.rejected}</div><div class="k">In rework</div></div>`}
-    </section>
-    <div class="split">
+    <div class="twocol">
       <div>
-        <fieldset class="field" style="margin-bottom:12px"><legend class="sr">Elevation</legend>
-          <div class="choices">${st.elevations.map((e) => `<label class="choice"><input type="radio" name="el" value="${e.id}" ${e.id === el.id ? 'checked' : ''}><span>${esc(e.name)}</span></label>`).join('')}</div></fieldset>
+        ${st.elevations.length > 1 ? `<div class="seg" role="group" aria-label="Elevation">${st.elevations.map((e) => `<button type="button" data-el="${e.id}" aria-pressed="${e.id === el.id}">${esc(e.name)}</button>`).join('')}</div>` : `<p class="eyebrow">${esc(el.name)} elevation</p>`}
         <div id="elev"></div>
-        <div class="legend"><span><span class="dot" style="color:var(--red)"></span>Awaiting QA / rework</span><span><span class="dot" style="color:var(--green)"></span>QA passed</span></div>
-        ${office ? `<div class="row" style="margin-top:12px">${uploadBtn('id="draw"', el.image ? 'Replace drawing' : 'Upload marked-up drawing', 'image/*')}</div>` : ''}
+        <div class="legend"><span><span class="dot" style="color:var(--red)"></span>Awaiting QA / rework</span><span><span class="dot" style="color:var(--green)"></span>QA passed</span><span class="muted">${pins.length} on ${esc(el.name)}</span></div>
+        <div id="picked" aria-live="polite" style="margin-top:12px"></div>
       </div>
       <div>
-        <div id="picked" aria-live="polite"></div>
-        ${office ? `
-        <div class="card">
-          <div class="field" style="margin:0"><label for="fr">Fire rating</label>
-            <select id="fr">${db.FIRE_RATINGS.map((r) => `<option value="${r}" ${r === st.fireRating ? 'selected' : ''}>${r} minutes</option>`).join('')}</select></div>
-        </div>` : ''}
-        <div class="card"><p class="eyebrow">${esc(el.name)} elevation</p>
-          <ul class="list">
-            <li><span class="k">Hold points</span><span class="v">${pins.length}</span></li>
-            <li><span class="k">QA passed</span><span class="v" style="color:var(--green)">${pins.filter((p) => p.qa === 'approved').length}</span></li>
-            <li><span class="k">Red pins</span><span class="v" style="color:var(--red)">${pins.filter((p) => p.qa !== 'approved').length}</span></li>
-          </ul></div>
+        ${isStaff ? `
+        <details class="disc">
+          <summary><span style="display:flex;gap:12px;align-items:center">${iconBubble(I.pen, 'slate')}Job settings</span></summary>
+          <div style="padding:4px 16px 16px">
+            <div class="field"><label for="fr">Fire rating</label><select id="fr">${db.FIRE_RATINGS.map((r) => `<option value="${r}" ${r === st.fireRating ? 'selected' : ''}>${r} minutes</option>`).join('')}</select></div>
+            <div class="field"><label for="tp">Target hold points</label>${stepper('tp', st.targetPins, { step: 5, min: 5, max: 2000, label: 'Target hold points', unit: 'HP' })}</div>
+            <div class="field" style="margin:0"><span class="label">${esc(el.name)} drawing</span>${uploadBtn('id="draw"', el.image ? 'Replace marked-up drawing' : 'Upload marked-up drawing', 'image/*')}</div>
+          </div>
+        </details>` : ''}
+        ${q && isStaff ? `${sectionHead('From quote')}<div class="group">${quoteRow(q)}</div>` : ''}
       </div>
     </div>`;
 
-  host.querySelectorAll('[name=el]').forEach((r) => r.addEventListener('change', () => { writeJSON(key, r.value); ctx.render(); }));
+  host.querySelectorAll('[data-el]').forEach((b) => b.addEventListener('click', () => { writeJSON(key, b.dataset.el); ctx.render(); }));
   host.querySelector('#fr')?.addEventListener('change', (e) => { st.fireRating = +e.target.value; db.persist(); toast(`Fire rating set to ${st.fireRating} min`); });
+  if (isStaff) wireSteppers(host, (k, v) => { if (k === 'tp' && v > 0) { st.targetPins = v; db.persist(); } });
   host.querySelector('#draw')?.addEventListener('change', async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -219,9 +165,7 @@ async function siteOverview(ctx, st, s, host) {
     await putFile(id, blob);
     el.image = { id, w: bmp.width, h: bmp.height };
     (st.docs.elevations ||= []).push({ id, name: f.name, at: Date.now() });
-    db.persist();
-    toast('Drawing uploaded');
-    ctx.render();
+    db.persist(); toast('Drawing uploaded'); ctx.render();
   });
 
   const image = el.image ? await fileURL(el.image.id).then((u) => (u ? { url: u, w: el.image.w, h: el.image.h } : null)) : null;
@@ -229,102 +173,112 @@ async function siteOverview(ctx, st, s, host) {
     el, pins, image,
     onSelect: (pid) => {
       const p = pins.find((x) => x.id === pid);
-      host.querySelector('#picked').innerHTML = p ? pinCard(p, { showSite: false }) : '';
+      host.querySelector('#picked').innerHTML = p ? `<div class="group">${pinRow(p)}</div>` : '';
     },
   });
   ctx.cleanups.push(m.destroy);
 }
 
-function sitePins(ctx, st, host, params) {
+function jobPins(ctx, st, host, params) {
   const f = params?.get('f') || 'all';
   const all = db.pinsFor(st.id).sort((a, b) => b.createdAt - a.createdAt);
-  const counts = { all: all.length, pending: 0, rejected: 0, approved: 0 };
-  all.forEach((p) => counts[p.qa]++);
+  const n = (k) => all.filter((p) => k === 'all' || p.qa === k).length;
   const list = all.filter((p) => f === 'all' || p.qa === f);
-  const tabs = [['all', 'All'], ['pending', 'Awaiting QA'], ['rejected', 'Rework'], ['approved', 'Passed']];
   host.innerHTML = `
-    <div class="row" style="margin-bottom:14px">${tabs.map(([k, l]) => `<a class="btn sm ${k === f ? 'primary' : ''}" href="#/sites/${st.id}/pins?f=${k}">${l} <span class="mono">${counts[k]}</span></a>`).join('')}</div>
-    <div class="stack grid2">${list.slice(0, 60).map((p) => pinCard(p, { showSite: false })).join('') || '<p class="empty card">None.</p>'}</div>`;
+    <div class="seg" style="background:none;padding:0;gap:8px">${[['all', 'All'], ['pending', 'Awaiting QA'], ['rejected', 'Rework'], ['approved', 'Passed']].map(([k, l]) => `<a href="#/jobs/${st.id}/pins?f=${k}" ${k === f ? 'aria-current="page"' : ''} style="border:1px solid var(--line);background:${k === f ? 'var(--navy)' : 'var(--white)'};color:${k === f ? '#fff' : 'var(--slate)'};flex:0 0 auto">${l} <span class="n" style="color:inherit">${n(k)}</span></a>`).join('')}</div>
+    <div class="group">${list.slice(0, 60).map((p) => pinRow(p)).join('') || '<div class="empty">None.</div>'}</div>`;
 }
 
-function siteDaily(ctx, st, host) {
-  const office = isOffice(ctx);
-  const days = db.S().days.filter((d) => d.siteId === st.id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+function jobDaily(ctx, st, host) {
+  const isStaff = staff(ctx);
+  const days = db.S().days.filter((d) => d.siteId === st.id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
   const week = db.isoWeek();
-  const weekDays = db.S().days.filter((d) => d.siteId === st.id && db.isoWeek(new Date(d.date)) === week);
   const hours = {};
-  weekDays.forEach((d) => Object.entries(d.hours || {}).forEach(([o, h]) => { hours[o] = (hours[o] || 0) + h; }));
-  const temps = (r) => (r ? db.TEMPS.map((t) => `<span><span class="muted small">${t.label}</span><br><strong>${r[t.key] ?? '—'}°</strong></span>`).join('') : '<span class="muted" style="grid-column:1/-1">Not recorded</span>');
-
+  db.S().days.filter((d) => d.siteId === st.id && db.isoWeek(new Date(d.date)) === week).forEach((d) => Object.entries(d.hours || {}).forEach(([o, h]) => { hours[o] = (hours[o] || 0) + h; }));
+  const maxH = Math.max(40, ...Object.values(hours));
   host.innerHTML = `
-    <div class="split">
-      <div class="stack">${days.map((d) => {
-        const c = db.dayCost(d);
-        const hrs = Object.values(d.hours || {}).reduce((a, b) => a + b, 0);
-        return `
-        <article class="card">
-          <div class="spread"><h3 style="margin:0">${new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</h3>
-            <span class="row" style="gap:6px">${d.incident ? `<span class="chip c-red">${I.alert}Incident</span>` : ''}${d.am && d.pm ? `<span class="chip c-green">${I.check}AM + PM</span>` : '<span class="chip c-red"><span class="dot"></span>Temps missing</span>'}</span></div>
-          ${['am', 'pm'].map((w) => `<p class="eyebrow" style="margin:14px 0 6px">${w.toUpperCase()}${d[w] ? ` · ${time(d[w].at)} · GPS ${d[w].gps ? '✓' : '—'}` : ''}</p><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${temps(d[w])}</div>`).join('')}
-          <ul class="list" style="margin-top:10px">
-            <li><span class="k">Hours</span><span class="v">${hrs} h</span></li>
-            ${d.toolbox ? `<li><span class="k">Toolbox talk</span><span class="v">${esc(d.toolbox)}</span></li>` : ''}
-            <li><span class="k">H&amp;S checks</span><span class="v">${(d.checks || []).filter(Boolean).length}/${db.HS_CHECKS.length}</span></li>
-            <li><span class="k">Video diary</span><span class="v">${d.diary ? 'Recorded' : '—'}</span></li>
-            ${office ? `<li><span class="k">Cost (labour + materials)</span><span class="v">${gbp(c.total)} <span class="muted small">(${gbp(c.labour)} + ${gbp(c.materials)})</span></span></li>` : ''}
-          </ul>
-          ${d.incident ? `<p class="small" style="margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--red-bg);color:var(--red);font-weight:600">${esc(d.incident)}</p>` : ''}
-        </article>`;
-      }).join('') || '<p class="empty card">No daily records yet.</p>'}</div>
+    <div class="twocol">
+      <div>
+        ${days.map((d) => {
+          const hrs = Object.values(d.hours || {}).reduce((a, b) => a + b, 0);
+          const ok = d.am && d.pm;
+          const c = db.dayCost(d);
+          return `
+          <details class="disc">
+            <summary>
+              <span style="display:flex;gap:12px;align-items:center;min-width:0">${iconBubble(d.incident ? I.alert : ok ? I.check : I.daily, d.incident ? 'red' : ok ? 'green' : 'orange')}
+                <span style="min-width:0"><span style="display:block">${new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                <span class="small muted" style="font-weight:400">${ok ? 'AM + PM temps' : 'Temps incomplete'} · ${hrs} h${d.incident ? ' · incident' : ''}</span></span></span>
+            </summary>
+            <div style="padding:0 16px 16px">
+              ${['am', 'pm'].map((w) => `<p class="eyebrow" style="margin:6px 0">${w.toUpperCase()}${d[w] ? ` · ${time(d[w].at)}${d[w].gps ? ' · GPS ✓' : ''}` : ' · not recorded'}</p>
+                ${d[w] ? spec(db.TEMPS.map((t) => [t.label, `${d[w][t.key]}°`])) : ''}`).join('')}
+              ${spec([
+                ['H&amp;S checks', `${(d.checks || []).filter(Boolean).length}/${db.HS_CHECKS.length}`],
+                ['Toolbox talk', d.toolbox ? esc(d.toolbox) : '—'],
+                ['Video diary', d.diary ? 'Recorded' : '—'],
+                isStaff ? ['Cost', `${gbp(c.total)}<small> L ${gbp(c.labour)} · M ${gbp(c.materials)}</small>`] : ['Hours', `${hrs} h`],
+              ])}
+              ${d.incident ? `<p class="small" style="margin:0;padding:10px 12px;border-radius:12px;background:var(--red-bg);color:var(--red);font-weight:600">${esc(d.incident)}</p>` : ''}
+            </div>
+          </details>`;
+        }).join('') || '<p class="empty card">No daily records yet.</p>'}
+      </div>
       <section class="card">
         <p class="eyebrow">Hours this week · W${week.split('-W')[1]}</p>
-        <ul class="list">${st.team.map((o) => `<li><span class="k">${esc(db.operative(o).name)}</span><span class="v">${hours[o] || 0} h${office ? ` <span class="muted small">· ${gbp((hours[o] || 0) * db.operative(o).rate)}</span>` : ''}</span></li>`).join('')}</ul>
+        <ul class="bars">${st.team.map((o) => `<li><span class="lbl">${esc(db.operative(o).name)}</span><span class="val">${hours[o] || 0} h${isStaff ? ` <span class="muted small">${gbp((hours[o] || 0) * db.operative(o).rate)}</span>` : ''}</span><span class="track"><i style="width:${((hours[o] || 0) / maxH) * 100}%"></i></span></li>`).join('')}</ul>
       </section>
     </div>`;
 }
 
-function siteDocs(ctx, st, host) {
-  const office = isOffice(ctx);
+function jobDocs(ctx, st, host) {
+  const isStaff = staff(ctx);
   const week = db.isoWeek();
+  const signed = st.team.filter((o) => db.ramsSigned(st, o)).length;
+  const req = db.SITE_DOCS.filter((d) => d.required && d.key !== 'rams');
+  const sup = db.SITE_DOCS.filter((d) => !d.required);
+  const have = (d) => (st.docs[d.key] || []).length > 0;
+  const docRow = (d) => {
+    const files = st.docs[d.key] || [];
+    const f = files.at(-1);
+    return rowItem({
+      lead: iconBubble(f ? I.file : d.required ? I.alert : I.file, f ? 'green' : d.required ? 'red' : 'slate'),
+      title: esc(d.label),
+      sub: f ? `${f.id ? `<a href="#" data-view="${f.id}">${esc(f.name)}</a>` : esc(f.name)} · ${dateShort(f.at)}${files.length > 1 ? ` · ${files.length} files` : ''}` : d.required ? '<span style="color:var(--red);font-weight:700">Missing</span>' : esc(d.note || 'Not uploaded'),
+      trail: isStaff ? uploadIcon(`data-doc="${d.key}"`, `Upload ${d.label}`) : '',
+    });
+  };
   host.innerHTML = `
-    <section class="card">
-      <div class="spread top"><div><p class="eyebrow">RAMS · Week ${week.split('-W')[1]}</p><h3 style="margin:0">Current revision <span class="mono">${esc(st.rams.rev)}</span></h3></div>
-        ${office ? uploadBtn('id="ramsrev"', 'New revision') : ''}</div>
-      <ul class="list" style="margin-top:10px">${st.team.map((o) => {
-        const sig = st.rams.signatures.find((x) => x.operative === o && x.week === week && x.rev === st.rams.rev);
-        return `<li><span class="k">${esc(db.operative(o).name)}</span><span class="v">${sig ? `<span class="chip c-green">${I.check}Signed ${dateShort(sig.at)}</span>` : '<span class="chip c-red"><span class="dot"></span>Not signed</span>'}</span></li>`;
-      }).join('')}</ul>
-      <p class="hint">Operatives sign each week, and again whenever a new revision is uploaded.</p>
-    </section>
-    <section class="card">
-      <p class="eyebrow">Site documents</p>
-      <ul class="list">${db.SITE_DOCS.filter((d) => d.key !== 'rams').map((d) => {
-        const files = st.docs[d.key] || [];
-        const lastF = files.at(-1);
-        return `<li>
-          <span class="k" style="flex:1;min-width:0"><strong>${esc(d.label)}</strong>${d.required ? ' <span class="chip c-navy" style="font-size:12px;padding:2px 8px">Required</span>' : ''}
-            <br><span class="small ${lastF ? 'muted' : ''}" style="${!lastF && d.required ? 'color:var(--red);font-weight:700' : ''}">${lastF ? `${files.length > 1 ? `${files.length} files · ` : ''}${lastF.id ? `<a href="#" data-view="${lastF.id}">${esc(lastF.name)}</a>` : esc(lastF.name)} · ${dateShort(lastF.at)}` : d.required ? 'Missing' : esc(d.note || 'Not uploaded')}</span></span>
-          ${office ? uploadBtn(`data-doc="${d.key}"`, lastF ? 'Add' : 'Upload') : ''}
-        </li>`;
-      }).join('')}</ul>
-    </section>`;
+    <div class="twocol">
+      <div>
+        <section class="card" style="display:flex;gap:16px;align-items:center">
+          ${ring(st.team.length ? (signed / st.team.length) * 100 : 0, 64, `${signed} of ${st.team.length} signed`)}
+          <div style="flex:1;min-width:0"><p class="eyebrow" style="margin:0">RAMS rev ${esc(st.rams.rev)} · week ${week.split('-W')[1]}</p><h3 style="margin:2px 0 0">${signed} of ${st.team.length} operatives signed</h3></div>
+          ${isStaff ? uploadBtn('id="ramsrev"', 'New rev') : ''}
+        </section>
+        <div class="group">${st.team.map((o) => {
+          const sig = st.rams.signatures.find((x) => x.operative === o && x.week === week && x.rev === st.rams.rev);
+          return rowItem({ lead: avatar(db.operative(o).name, 36), title: esc(db.operative(o).name), trail: sig ? `<span class="chip c-green">${I.check}${dateShort(sig.at)}</span>` : '<span class="chip c-red"><span class="dot"></span>Not signed</span>' });
+        }).join('')}</div>
+      </div>
+      <div>
+        <div class="group"><div class="gh">Required · ${req.filter(have).length} of ${req.length}</div>${req.map(docRow).join('')}</div>
+        <details class="disc"><summary><span>Supporting documents</span><span class="muted small" style="margin-left:auto;font-weight:600">${sup.filter(have).length} of ${sup.length}</span></summary>${sup.map(docRow).join('')}</details>
+      </div>
+    </div>`;
 
   host.querySelector('#ramsrev')?.addEventListener('change', async (e) => {
     const f = await uploadTo(e.target);
     if (!f) return;
-    st.rams.rev = String.fromCharCode(st.rams.rev.charCodeAt(0) + 1);
+    st.rams.rev = st.docs.rams.length ? String.fromCharCode(st.rams.rev.charCodeAt(0) + 1) : st.rams.rev;
     st.docs.rams.push({ ...f, rev: st.rams.rev });
-    db.persist();
-    toast(`RAMS rev ${st.rams.rev} issued. Operatives must re-sign.`);
-    ctx.render();
+    db.persist(); toast(`RAMS rev ${st.rams.rev} issued. Operatives must re-sign.`); ctx.render();
   });
   host.querySelectorAll('[data-doc]').forEach((inp) => inp.addEventListener('change', async () => {
     const f = await uploadTo(inp);
     if (!f) return;
     (st.docs[inp.dataset.doc] ||= []).push(f);
-    db.persist();
-    toast('Uploaded');
-    ctx.render();
+    db.persist(); toast('Uploaded'); ctx.render();
   }));
   host.querySelectorAll('[data-view]').forEach((a) => a.addEventListener('click', async (e) => {
     e.preventDefault();
@@ -333,100 +287,97 @@ function siteDocs(ctx, st, host) {
   }));
 }
 
-function siteTeam(ctx, st, host) {
-  const others = db.S().operatives.filter((o) => !st.team.includes(o.id));
+function jobTeam(ctx, st, host) {
   host.innerHTML = `
-    <section class="card">
-      <p class="eyebrow">Assigned operatives</p>
-      <ul class="list">${st.team.map((oid) => { const o = db.operative(oid); return `
-        <li><span class="k"><strong>${esc(o.name)}</strong><br><span class="muted small">${esc(o.role)} · ${gbp(o.rate)}/h</span></span>
-          <button class="btn sm danger" data-rm="${o.id}" aria-label="Remove ${esc(o.name)}">Remove</button></li>`; }).join('')}</ul>
-      ${others.length ? `<div class="field" style="margin:14px 0 0"><label for="add">Add operative</label>
-        <div class="row" style="flex-wrap:nowrap"><select id="add">${others.map((o) => `<option value="${o.id}">${esc(o.name)} · ${esc(o.role)} · ${gbp(o.rate)}/h</option>`).join('')}</select>
-        <button class="btn primary" id="addbtn" style="flex:none">Add</button></div></div>` : ''}
-      <p class="hint">Hourly rates are never shown to the client or to other operatives.</p>
-    </section>`;
-  host.querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => { st.team = st.team.filter((x) => x !== b.dataset.rm); db.persist(); ctx.render(); }));
-  host.querySelector('#addbtn')?.addEventListener('click', () => { st.team.push(host.querySelector('#add').value); db.persist(); toast('Operative added'); ctx.render(); });
+    <div class="twocol">
+      <div>
+        ${sectionHead('Installers on this job')}
+        <p class="muted small" style="margin-top:-4px">Only ticked installers see this job on their phone.</p>
+        <div class="group">${db.S().operatives.map((o) => rowItem({
+          lead: avatar(o.name, 40), title: esc(o.name), sub: `${esc(o.role)} · ${gbp(o.rate)}/h`,
+          trail: `<input type="checkbox" data-op="${o.id}" ${st.team.includes(o.id) ? 'checked' : ''} aria-label="Assign ${esc(o.name)}" style="width:26px;height:26px">`,
+        })).join('')}</div>
+        <p class="hint">Hourly rates are never shown to the client or to other operatives.</p>
+      </div>
+      <div>
+        ${sectionHead('Client')}
+        <div class="card"><div class="field" style="margin:0"><label for="cl">Shared with</label>
+          <select id="cl"><option value="">Nobody</option>${db.S().clients.map((c) => `<option value="${c.id}" ${c.id === st.clientId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+          <p class="hint">The client sees progress, QA-passed hold points and documents in their portal.</p></div></div>
+      </div>
+    </div>`;
+  host.querySelectorAll('[data-op]').forEach((cb) => cb.addEventListener('change', () => {
+    if (cb.checked) st.team.push(cb.dataset.op); else st.team = st.team.filter((x) => x !== cb.dataset.op);
+    db.persist(); toast(cb.checked ? 'Installer assigned' : 'Installer removed');
+  }));
+  host.querySelector('#cl').addEventListener('change', (e) => { st.clientId = e.target.value || null; db.persist(); toast('Client updated'); });
 }
 
-// ---------- QA queue ----------
+// ---------- QA ----------
 export function viewQA(ctx) {
   const { main } = ctx;
   const q = db.S().pins.filter((p) => p.qa === 'pending').sort((a, b) => a.createdAt - b.createdAt);
   const bySite = {};
   q.forEach((p) => (bySite[p.siteId] ||= []).push(p));
   main.innerHTML = `
-    <p class="eyebrow">Quality check · by pin number</p>
-    <div class="pagehead"><h1>QA queue</h1><span class="chip ${q.length ? 'c-red' : 'c-green'}">${q.length} waiting</span></div>
+    <div class="pagehead"><div><p class="eyebrow">Quality check · by pin number</p><h1>QA queue</h1></div><span class="chip ${q.length ? 'c-red' : 'c-green'}">${q.length} waiting</span></div>
     <p class="muted">Pins stay red on the drawing until they pass QA, then turn green.</p>
-    ${Object.entries(bySite).map(([sid, ps]) => `
-      <h2 style="margin-top:20px">${esc(db.site(sid).name)} <span class="mono muted" style="font-size:16px">${ps.length}</span></h2>
-      <div class="stack grid2">${ps.map((p) => pinCard(p, { showSite: false })).join('')}</div>`).join('') || '<div class="card empty"><h3>All clear</h3><p>Nothing waiting for QA.</p></div>'}`;
+    ${Object.entries(bySite).map(([sid, ps]) => `${sectionHead(`${esc(db.site(sid).name)} <span class="mono muted" style="font-size:15px">${ps.length}</span>`)}<div class="group">${ps.map((p) => pinRow(p)).join('')}</div>`).join('')
+      || `<div class="group">${rowItem({ lead: iconBubble(I.check, 'green'), title: 'All clear', sub: 'Nothing waiting for QA' })}</div>`}`;
   setAction(main, null);
 }
 
-// ---------- Company ----------
-export function viewCompany(ctx) {
+// ---------- Team & compliance ----------
+export function viewCompany(ctx, params) {
   const { main } = ctx;
   const c = db.S().company;
-  main.innerHTML = `
-    <p class="eyebrow">By company</p>
-    <div class="pagehead"><h1>${esc(c.name)}</h1></div>
-    <div class="spread" style="margin:8px 0 10px"><h2 style="margin:0">Operatives</h2><button class="btn sm primary" id="addop">${I.plus}Add</button></div>
-    <div class="stack grid2">${db.S().operatives.map((o) => {
-      const worst = o.quals.map((q) => db.expiryState(q.expiry)).sort((a, b) => ['expired', 'soon', 'ok', 'none'].indexOf(a) - ['expired', 'soon', 'ok', 'none'].indexOf(b))[0];
-      return `
-      <button type="button" class="card cardlink" data-op="${o.id}" style="width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;margin:0">
-        <div class="spread top"><div><h3 style="margin:0">${esc(o.name)}</h3><div class="muted small">${esc(o.role)} · ${gbp(o.rate)}/h · ${o.quals.length} qualifications</div></div>
-          ${worst === 'expired' ? `<span class="chip c-red">${I.alert}Expired</span>` : worst === 'soon' ? `<span class="chip c-amber">${I.clock}Expiring</span>` : `<span class="chip c-green">${I.check}In date</span>`}</div>
-      </button>`;
-    }).join('')}</div>
-
-    <h2 style="margin:28px 0 10px">Insurance</h2>
-    <div class="stack grid2">${db.INSURANCE.map((i) => {
+  const t = params.get('t') || 'team';
+  const rank = ['expired', 'soon', 'ok', 'none'];
+  const worst = (o) => o.quals.map((q) => db.expiryState(q.expiry)).sort((a, b) => rank.indexOf(a) - rank.indexOf(b))[0];
+  let body = '';
+  if (t === 'team') {
+    body = `<div class="group">${db.S().operatives.map((o) => rowItem({
+      attrs: `data-op="${o.id}" role="button" tabindex="0" style="cursor:pointer"`,
+      lead: avatar(o.name, 44), title: esc(o.name), sub: `${esc(o.role)} · ${gbp(o.rate)}/h · ${o.quals.length} qualifications`,
+      trail: worst(o) === 'expired' ? `<span class="chip c-red">${I.alert}Expired</span>` : worst(o) === 'soon' ? `<span class="chip c-amber">${I.clock}Expiring</span>` : `<span class="chip c-green">${I.check}In date</span>`,
+    })).join('')}</div>
+    <button class="btn block" id="addop">${I.plus}Add operative</button>`;
+  } else if (t === 'insurance') {
+    body = `<div class="group">${db.INSURANCE.map((i) => {
       const v = c.insurance[i.key];
-      return `
-      <section class="card">
-        <div class="spread top"><h3 style="margin:0">${esc(i.label)}</h3>${v.expiry ? expiryChip(db.expiryState(v.expiry), v.expiry) : '<span class="chip c-slate">Not set</span>'}</div>
-        <p class="big" style="margin:10px 0">${gbpBig(v.value)}</p>
-        <div class="row">
-          <button class="btn sm" data-ins="${i.key}">Edit cover</button>
-          ${uploadBtn(`data-insdoc="${i.key}"`, v.file ? 'Replace certificate' : 'Upload certificate')}
-        </div>
-        ${v.file ? `<p class="small muted" style="margin:8px 0 0">${esc(v.file.name)}</p>` : ''}
-      </section>`;
-    }).join('')}</div>
+      return rowItem({ attrs: `data-ins="${i.key}" role="button" tabindex="0" style="cursor:pointer"`, lead: iconBubble(I.qa, v.expiry ? (db.expiryState(v.expiry) === 'ok' ? 'green' : 'orange') : 'slate'), title: esc(i.label), sub: `${gbpBig(v.value)} cover${v.file ? ` · ${esc(v.file.name)}` : ''}`, trail: v.expiry ? expiryChip(db.expiryState(v.expiry), v.expiry) : '<span class="chip c-slate">Not set</span>' });
+    }).join('')}</div>`;
+  } else if (t === 'accreditations') {
+    body = `<div class="group">${c.accreditations.map((a) => rowItem({ lead: iconBubble(I.check, a.expiry && db.expiryState(a.expiry) !== 'ok' ? 'orange' : 'green'), title: esc(a.name), sub: `${a.expiry ? `Valid to ${dateShort(a.expiry)}` : 'No expiry'}${a.file ? ` · ${esc(a.file.name)}` : ''}`, trail: uploadBtn(`data-acc="${a.id}"`, a.file ? 'Replace' : 'Upload') })).join('')}</div>`;
+  } else {
+    body = `<p class="muted small">Material cost per linear metre by sock size, used for daily job costs. Quote sell rates live in the price book.</p>
+      <div class="group">${Object.entries(db.SOCK_RATE).map(([mm, r]) => rowItem({ lead: iconBubble(I.sites, 'slate'), title: `<span class="mono">${mm}mm</span> sock`, trail: `£${r.toFixed(2)} / m` })).join('')}</div>
+      ${sectionHead('Quote price book')}
+      <div class="group">${db.CATALOGUE.map((x) => rowItem({ title: esc(x.desc), sub: `Cost £${x.cost.toFixed(2)} / ${x.unit}`, trail: `£${x.rate.toFixed(2)} / ${x.unit}` })).join('')}</div>`;
+  }
+  main.innerHTML = `
+    <a class="btn sm ghost" href="#/more" style="margin:-8px 0 8px -12px">${I.back}More</a>
+    <div class="pagehead"><div><p class="eyebrow">${esc(db.S().branding.name)}</p><h1>Team &amp; compliance</h1></div></div>
+    <nav class="seg" aria-label="Sections">${[['team', 'Operatives'], ['insurance', 'Insurance'], ['accreditations', 'Accreditations'], ['rates', 'Rates']].map(([k, l]) => `<a href="#/company?t=${k}" ${k === t ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+    ${body}`;
 
-    <h2 style="margin:28px 0 10px">Accreditations</h2>
-    <section class="card"><ul class="list">${c.accreditations.map((a) => `
-      <li><span class="k" style="flex:1;min-width:0"><strong>${esc(a.name)}</strong><br>${a.expiry ? expiryChip(db.expiryState(a.expiry), a.expiry) : '<span class="muted small">No expiry</span>'}${a.file ? ` <span class="muted small">· ${esc(a.file.name)}</span>` : ''}</span>
-        ${uploadBtn(`data-acc="${a.id}"`, a.file ? 'Replace' : 'Upload')}</li>`).join('')}</ul></section>
-
-    <h2 style="margin:28px 0 10px">Material rates</h2>
-    <section class="card">
-      <p class="muted small">Used for daily costs: sock diameter × linear metres injected. Placeholder figures.</p>
-      <ul class="list">${Object.entries(db.SOCK_RATE).map(([mm, r]) => `<li><span class="k mono">${mm}mm sock</span><span class="v">£${r.toFixed(2)} / m</span></li>`).join('')}</ul>
-    </section>`;
-
-  main.querySelectorAll('[data-op]').forEach((b) => b.addEventListener('click', () => operativeSheet(ctx, db.operative(b.dataset.op))));
-  main.querySelector('#addop').addEventListener('click', () => operativeSheet(ctx, null));
-  main.querySelectorAll('[data-ins]').forEach((b) => b.addEventListener('click', () => {
-    const i = db.INSURANCE.find((x) => x.key === b.dataset.ins);
+  const onRow = (sel, fn) => main.querySelectorAll(sel).forEach((r) => { r.addEventListener('click', (e) => { if (!e.target.closest('label,input')) fn(r); }); r.addEventListener('keydown', (e) => { if (e.key === 'Enter') fn(r); }); });
+  onRow('[data-op]', (r) => operativeSheet(ctx, db.operative(r.dataset.op)));
+  main.querySelector('#addop')?.addEventListener('click', () => operativeSheet(ctx, null));
+  onRow('[data-ins]', (r) => {
+    const i = db.INSURANCE.find((x) => x.key === r.dataset.ins);
     const v = c.insurance[i.key];
     openSheet({
       title: i.label,
       body: `
         <div class="field"><label for="iv">Cover value</label><div class="unit" data-unit="£"><input id="iv" inputmode="numeric" value="${v.value || ''}"></div><p class="hint">Whole pounds, e.g. 10000000 for £10m</p></div>
-        <div class="field"><label for="ie">Expiry date</label><input id="ie" type="date" value="${v.expiry}"></div>`,
+        <div class="field"><label for="ie">Expiry date</label><input id="ie" type="date" value="${v.expiry}"></div>
+        <div class="field"><span class="label">Certificate</span>${uploadBtn('id="icert"', v.file ? `Replace ${v.file.name}` : 'Upload certificate')}</div>`,
       primary: 'Save',
+      onOpen: (sh) => sh.querySelector('#icert').addEventListener('change', async (e) => { const f = await uploadTo(e.target); if (f) { v.file = f; db.persist(); toast('Certificate uploaded'); } }),
       onPrimary: (sh) => { v.value = +sh.querySelector('#iv').value.replace(/\D/g, '') || 0; v.expiry = sh.querySelector('#ie').value; db.persist(); toast('Insurance updated'); ctx.render(); },
     });
-  }));
-  main.querySelectorAll('[data-insdoc]').forEach((inp) => inp.addEventListener('change', async () => {
-    const f = await uploadTo(inp); if (!f) return;
-    c.insurance[inp.dataset.insdoc].file = f; db.persist(); toast('Certificate uploaded'); ctx.render();
-  }));
+  });
   main.querySelectorAll('[data-acc]').forEach((inp) => inp.addEventListener('change', async () => {
     const f = await uploadTo(inp); if (!f) return;
     c.accreditations.find((a) => a.id === inp.dataset.acc).file = f; db.persist(); toast('Certificate uploaded'); ctx.render();
@@ -444,15 +395,14 @@ function operativeSheet(ctx, o) {
       <fieldset class="field"><legend>Role</legend><div class="choices c3">${db.ROLES.map((r) => `<label class="choice"><input type="radio" name="or" value="${r}" ${r === o.role ? 'checked' : ''}><span>${r}</span></label>`).join('')}</div></fieldset>
       <div class="field"><label for="rate">Hourly rate</label>${stepper('rate', o.rate, { step: 0.5, min: 0, max: 200, label: 'Hourly rate', unit: '£/h' })}<p class="hint">Hidden from clients and other operatives.</p></div>
       ${isNew ? '' : `<p class="label">Training and qualifications</p>
-      <ul class="list">${o.quals.map((q) => `<li style="flex-wrap:wrap"><span class="k" style="flex:1 1 180px"><strong>${esc(q.name)}</strong><br>${expiryChip(db.expiryState(q.expiry), q.expiry)}${q.file ? ` <span class="muted small">· ${esc(q.file.name)}</span>` : ''}</span>
-        <span class="row"><input type="date" value="${q.expiry}" data-qexp="${q.id}" aria-label="${esc(q.name)} expiry" style="width:auto;min-height:48px;font-size:16px">${uploadBtn(`data-qdoc="${q.id}"`, q.file ? 'Replace' : 'Upload')}</span></li>`).join('')}</ul>`}`,
+      <div class="group">${o.quals.map((q) => `<div class="ri" style="flex-wrap:wrap"><span class="ri-main" style="flex:1 1 180px"><span class="ri-title">${esc(q.name)}</span><span>${expiryChip(db.expiryState(q.expiry), q.expiry)}</span></span>
+        <span class="row"><input type="date" value="${q.expiry}" data-qexp="${q.id}" aria-label="${esc(q.name)} expiry" style="width:auto;min-height:48px;font-size:16px">${uploadBtn(`data-qdoc="${q.id}"`, q.file ? 'Replace' : 'Upload')}</span></div>`).join('')}</div>`}`,
     primary: isNew ? 'Add operative' : 'Save',
     onOpen: (sh) => {
       wireSteppers(sh);
       sh.querySelectorAll('[data-qdoc]').forEach((inp) => inp.addEventListener('change', async () => {
         const f = await uploadTo(inp); if (!f) return;
         o.quals.find((q) => q.id === inp.dataset.qdoc).file = f; db.persist(); toast('Document uploaded');
-        inp.nextElementSibling.lastChild.textContent = 'Replace';
       }));
     },
     onPrimary: (sh) => {
@@ -461,12 +411,12 @@ function operativeSheet(ctx, o) {
       Object.assign(o, { name, role: sh.querySelector('[name=or]:checked').value, rate: +sh.querySelector('#rate').value || 0 });
       sh.querySelectorAll('[data-qexp]').forEach((inp) => { o.quals.find((q) => q.id === inp.dataset.qexp).expiry = inp.value; });
       if (isNew) {
-        o.quals = [{ id: uid(), name: 'Injecta Fire Barrier installer training', expiry: '', file: null }, { id: uid(), name: 'IPAF 3a/3b (MEWP)', expiry: '', file: null }, { id: uid(), name: 'CSCS card', expiry: '', file: null }];
+        o.quals = ['Injecta Fire Barrier installer training', 'IPAF 3a/3b (MEWP)', 'CSCS card'].map((n) => ({ id: uid(), name: n, expiry: '', file: null }));
         db.S().operatives.push(o);
       }
-      db.persist();
-      toast(isNew ? 'Operative added' : 'Saved');
-      ctx.render();
+      db.persist(); toast(isNew ? 'Operative added' : 'Saved'); ctx.render();
     },
   });
 }
+
+export { date };

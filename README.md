@@ -11,7 +11,24 @@ npm start        # http://localhost:4173
 npm test         # every screen, all roles, at 375px, 390px, tablet and desktop
 ```
 
-Sign in with any of the three demo accounts (Installer, Back office, Client). Data is demo data stored on the device.
+Sign in with any of the four demo accounts. Data is demo data stored on the device.
+
+| Role | Sees | Can do |
+|---|---|---|
+| Contractor manager | Everything for their company | Quote, report, set up clients and portal access, create jobs and assign installers/clients, QA, branding |
+| Back office | Everything except branding | Quote, create jobs, QA, client setup, compliance |
+| Installer | Only jobs they're assigned to | RAMS sign-off, hold point capture, daily checks, fix rework |
+| Client | Only jobs and quotes assigned to them, under the contractor's logo | Track progress, view QA-passed hold points and documents, accept or decline quotes |
+
+## Quoting
+
+- **Builder** in 4 short steps: client & job → scope (quick build from linear metres + sock size, then edit lines from the price book) → files → review & send.
+- **File storage**: drawings, specs, photos, tender documents attached to each quote (IndexedDB on device); copied into the job's documents when won.
+- **Branded quote document** with the contractor's logo, printable / save as PDF.
+- **Pipeline**: Draft → Sent → Won / Lost / Expired (auto-expires after validity). Lost reasons captured.
+- **Client portal**: clients accept or decline sent quotes themselves.
+- **Won → job** in one step, assigning installers and the client.
+- **Reports**: won value, win rate (count and value), margin, pipeline, time to decision, won per month, pipeline by status, top clients, lost reasons, estimator performance. Exports: quote register CSV, monthly summary CSV, print/PDF.
 
 ## Requirements coverage (Injectaclad recording system requirements, 15/05/25)
 
@@ -46,9 +63,13 @@ Source Code Pro only for IDs, batch numbers and descriptors. The wordmark is an 
 ```
 index.html            app shell
 css/app.css           all styles, phone first, 768px and 1024px breakpoints
-js/app.js             sign-in, role-based nav, router
+js/app.js             sign-in, role-based nav, router, contractor branding
+js/home.js            staff and client home screens
+js/quotes.js          quote pipeline, builder, document, accept/decline, convert to job
+js/reports.js         quote reporting dashboard and exports
+js/admin.js           More hub, client setup / portal access, branding
 js/installer.js       Projects, Capture (hold point), Daily, Records, RAMS signing
-js/office.js          Overview, Sites (+ site tabs), QA queue, Company
+js/office.js          Jobs (+ job tabs incl. team assignment), QA queue, Team & compliance
 js/pin.js             hold point detail with QA / rework / resubmit
 js/elevation.js       zoom/pan/pin drawing (generated grid or uploaded drawing)
 js/chart.js           responsive bar chart
@@ -60,6 +81,7 @@ tests/mobile-check.mjs acceptance checks + screenshots to test-output/
 
 ## Open points
 
-- No backend or real authentication yet; `store.js` is the seam for an API.
+- No backend or real authentication yet; `store.js` is the seam for an API. Files live on the device until then.
+- Portal invites are simulated (no email is sent).
 - Material £/m rates per sock size are placeholders (Company → Material rates).
 - Video diary opens the front camera (talking to camera); all other capture uses the rear camera.
