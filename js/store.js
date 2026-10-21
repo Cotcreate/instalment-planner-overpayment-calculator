@@ -2,7 +2,7 @@
 // Records live in localStorage, files (photos, video, documents) in IndexedDB via files.js.
 // Swap load()/persist() for an API sync layer when the backend exists.
 
-const KEY = 'injectatrace.v5';
+const KEY = 'injectatrace.v6';
 const DAY = 86400000;
 
 // Placeholder contractor logo. The contractor uploads their own under More → Branding.
@@ -126,6 +126,76 @@ export function signRams(st, operativeId, sig) {
 
 export function saveDraft(d) { state.draft = d; persist(); }
 export function clearDraft() { state.draft = null; persist(); }
+
+// ---------- Valuations (fortnightly applications for payment) ----------
+// A hold point is billable once it was installed on or before the period end AND has passed QA,
+// and it hasn't been on an earlier valuation. Anything not yet passed rolls into the next one.
+export const PERIOD_DAYS = 14;
+const dayStart = (t) => { const x = new Date(t); x.setHours(0, 0, 0, 0); return x.getTime(); };
+const dayEnd = (t) => dayStart(t) + DAY - 1;
+export const readyForQA = (p) => !photoGaps(p).length && p.cavityDepth > 0 && p.length > 0 && !!p.batch && p.pinQty > 0;
+
+function _jobStart(d, st) {
+  const first = d.pins.filter((p) => p.siteId === st.id).reduce((m, p) => Math.min(m, p.createdAt), st.createdAt || Date.now());
+  const x = new Date(first); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // Monday
+  return x.getTime();
+}
+function _billed(d, jobId) { return new Set(d.valuations.filter((v) => v.jobId === jobId).flatMap((v) => v.pinIds)); }
+function _nextPeriod(d, st) {
+  const last = d.valuations.filter((v) => v.jobId === st.id).sort((a, b) => b.to - a.to)[0];
+  const from = last ? dayStart(last.to + DAY) : _jobStart(d, st);
+  return { from, to: dayEnd(from + (PERIOD_DAYS - 1) * DAY), no: (last?.no || 0) + 1 };
+}
+function _rates(d, st) {
+  const q = d.quotes.find((x) => x.id === st.quoteId);
+  const find = (key) => q?.lines.find((l) => l.key === key)?.rate ?? CATALOGUE.find((c) => c.key === key)?.rate ?? 0;
+  return { sock: Object.fromEntries(SOCK_SIZES.map((mm) => [mm, find(`sock${mm}`)])), pins: find('pins') };
+}
+export function summarize(list, st, d = state) {
+  const r = _rates(d, st);
+  const bySock = {};
+  let lm = 0, fixings = 0, pails = 0;
+  for (const p of list) {
+    lm += p.length; fixings += p.pinQty; pails += p.pails;
+    for (const mm of p.socks) bySock[mm] = (bySock[mm] || 0) + p.length;
+  }
+  const lines = Object.entries(bySock).sort((a, b) => a[0] - b[0]).map(([mm, m]) => ({ desc: `Injecta Fire Barrier, ${mm}mm sock`, unit: 'm', qty: +m.toFixed(1), rate: r.sock[mm], amount: m * r.sock[mm] }));
+  if (fixings) lines.push({ desc: 'Fixing pins', unit: 'each', qty: fixings, rate: r.pins, amount: fixings * r.pins });
+  return { count: list.length, lm: +lm.toFixed(1), fixings, pails, bySock, lines, value: lines.reduce((t, l) => t + l.amount, 0) };
+}
+function _candidates(d, st, to) {
+  const billed = _billed(d, st.id);
+  return d.pins.filter((p) => p.siteId === st.id && p.createdAt <= to && !billed.has(p.id));
+}
+function _makeValuation(d, st, from, to, by, at = Date.now(), notes = '') {
+  const list = _candidates(d, st, to).filter((p) => p.qa === 'approved');
+  const no = d.valuations.filter((v) => v.jobId === st.id).length + 1;
+  return { id: `v${st.id}-${no}-${at.toString(36)}`, jobId: st.id, no, from, to, issuedAt: at, issuedBy: by, notes, pinIds: list.map((p) => p.id), sum: summarize(list, st, d) };
+}
+export const nextPeriod = (st) => _nextPeriod(state, st);
+export const jobStart = (st) => _jobStart(state, st);
+export const valuationsFor = (jobId) => state.valuations.filter((v) => v.jobId === jobId).sort((a, b) => b.no - a.no);
+export const valuation = (id) => state.valuations.find((v) => v.id === id);
+// What a valuation for this period would contain right now, plus what's held back.
+export function draftValuation(st, from, to) {
+  const all = _candidates(state, st, dayEnd(to));
+  const pass = all.filter((p) => p.qa === 'approved');
+  const waiting = all.filter((p) => p.qa !== 'approved');
+  return { from: dayStart(from), to: dayEnd(to), pins: pass, sum: summarize(pass, st), waiting, ready: waiting.filter((p) => p.qa === 'pending' && readyForQA(p)), inPeriod: pass.filter((p) => p.createdAt >= dayStart(from)).length };
+}
+export function issueValuation(st, from, to, by, notes) {
+  const v = _makeValuation(state, st, dayStart(from), dayEnd(to), by, Date.now(), notes);
+  state.valuations.push(v); persist();
+  return v;
+}
+export function valuationsDue(sess) {
+  return sitesFor(sess).filter((st) => st.status === 'active').map((st) => ({ st, per: nextPeriod(st) })).filter((x) => x.per.to < Date.now());
+}
+export function passPins(ids, by) {
+  const at = Date.now();
+  for (const p of state.pins) if (ids.includes(p.id)) Object.assign(p, { qa: 'approved', qaNote: '', qaBy: by, qaAt: at });
+  persist();
+}
 
 // ---------- Derived figures ----------
 export function photoGaps(p) { return PHOTO_HEADINGS.filter((h) => !(p.photos[h.key] || []).length); }
@@ -362,7 +432,7 @@ function seed() {
   }
 
   const pins = [];
-  const counts = { s1: 64, s2: 30, s3: 30 };
+  const counts = { s1: 150, s2: 60, s3: 30 };
   for (const st of sites) {
     // Cavity barriers run along each floor's slab line. Work goes floor by floor, bottom up,
     // round each face left to right, so hold point numbers follow the installation order.
@@ -398,7 +468,7 @@ function seed() {
         createdAt: now - age * DAY,
         gps: { lat: 53.79 + rnd() * 0.01, lng: -1.55 + rnd() * 0.01, acc: 8 + Math.round(rnd() * 20) },
         qa, qaNote: qa === 'rejected' ? pick(['Injected sock photo does not show abutment to slab', 'Cavity measure photo unclear, retake', 'Access holes not reinstated in photo']) : '',
-        qaBy: qa !== 'pending' ? 'Office' : '', qaAt: qa !== 'pending' ? now - Math.max(0, age - 1) * DAY : null,
+        qaBy: qa !== 'pending' ? 'Gemma Hart' : '', qaAt: qa !== 'pending' ? Math.min(now - 3600000, now - age * DAY + (0.4 + rnd() * 2.5) * DAY) : null,
       });
     }
   }
@@ -487,7 +557,19 @@ function seed() {
     { id: 'i3', type: 'installer', name: 'Keystone Passive Fire', logo: SEED_LOGOS.i3, contact: 'Ola Adebayo', email: 'hello@keystonepf.co.uk' },
   ];
 
+  // Fortnightly valuations already issued on the live jobs; the latest finished fortnight is left due.
+  const valuations = [];
+  const d = { pins, quotes, valuations, sites };
+  for (const st of sites.filter((x) => x.status === 'active')) {
+    for (let guard = 0; guard < 20; guard++) {
+      const per = _nextPeriod(d, st);
+      if (per.to > now - 14 * DAY) break;
+      valuations.push(_makeValuation(d, st, per.from, per.to, 'Gemma Hart', per.to + 2 * DAY));
+    }
+  }
+
   return {
+    valuations,
     operatives, company, sites, pins, days, clients, quotes, managers, companies,
     branding: { cobrand: true },
     session: null, draft: null, quoteDraft: null, lastBatch: {},

@@ -8,6 +8,7 @@ import { viewQuotes, viewQuote, viewQuoteBuilder } from './quotes.js';
 import { viewReports } from './reports.js';
 import { viewMore, viewClients, viewClient, viewBranding, viewCompanies, viewCompanyCard } from './admin.js';
 import { viewPin } from './pin.js';
+import { viewValuations, viewValuationBuilder, viewValuationDoc } from './valuations.js';
 
 const main = document.getElementById('main');
 const nav = document.querySelector('.bottomnav');
@@ -22,10 +23,10 @@ const NAV = {
 };
 // Routes reachable from inside a section, and which tab they light up.
 const EXTRA = {
-  manager: { pin: 'jobs', qa: 'more', clients: 'more', company: 'more', branding: 'more' },
-  office: { pin: 'qa', reports: 'more', clients: 'more', company: 'more', companies: 'more' },
+  manager: { pin: 'jobs', qa: 'more', clients: 'more', company: 'more', branding: 'more', valuations: 'more', valuation: 'more' },
+  office: { pin: 'qa', reports: 'more', clients: 'more', company: 'more', companies: 'more', valuations: 'more', valuation: 'more' },
   installer: { pin: 'records' },
-  client: { pin: 'jobs' },
+  client: { pin: 'jobs', valuation: 'jobs' },
 };
 const HOME = { manager: 'home', office: 'home', installer: 'today', client: 'home' };
 const ROLE = { manager: 'Contractor', office: 'Injectaclad', installer: 'Installer', client: 'Client' };
@@ -112,7 +113,7 @@ function render() {
 
   chrome(sess, tabs.includes(r.name) ? r.name : extra[r.name]);
   const ctx = { main, sess, render, cleanups };
-  const titles = { home: 'Home', today: 'Today', capture: 'Capture', daily: 'Daily', records: 'Records', quotes: 'Quotes', jobs: 'Jobs', reports: 'Reports', qa: 'QA', more: 'More', clients: 'Clients', company: 'Team', branding: 'Branding', pin: 'Hold point' };
+  const titles = { home: 'Home', today: 'Today', capture: 'Capture', daily: 'Daily', records: 'Records', quotes: 'Quotes', jobs: 'Jobs', reports: 'Reports', qa: 'QA', more: 'More', clients: 'Clients', company: 'Team', branding: 'Branding', pin: 'Hold point', valuations: 'Valuations', valuation: 'Valuation' };
   document.title = `${titles[r.name] || 'Companies'} · ${db.brandFor(sess).name}`;
 
   const v = {
@@ -129,6 +130,8 @@ function render() {
     clients: () => (r.id ? viewClient(ctx, r.id) : viewClients(ctx)),
     company: () => viewCompany(ctx, r.params),
     branding: () => viewBranding(ctx),
+    valuations: () => (r.id ? viewValuationBuilder(ctx, r.id, r.params) : viewValuations(ctx)),
+    valuation: () => viewValuationDoc(ctx, r.id),
     companies: () => (r.id ? viewCompanyCard(ctx, r.id) : viewCompanies(ctx, r.params)),
     pin: () => viewPin(ctx, r.id),
   };

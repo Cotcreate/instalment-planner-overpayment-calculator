@@ -23,6 +23,7 @@ export function viewMore(ctx) {
   main.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">${esc(db.brandFor(sess).name)}</p><h1>More</h1></div></div>
     <div class="tiles">
+      ${tile({ href: '#/valuations', icon: I.records, title: 'Valuations', sub: 'Fortnightly reports for invoicing', tone: db.valuationsDue(sess).length ? 'orange' : 'green', badge: db.valuationsDue(sess).length ? `<span class="chip c-orange">${db.valuationsDue(sess).length} due</span>` : '' })}
       ${isMgr ? '' : tile({ href: '#/companies', icon: I.sites, title: 'Companies', sub: `${inst} installers · ${con} contractors`, tone: 'orange' })}
       ${tile({ href: '#/clients', icon: I.company, title: 'Clients', sub: `${db.S().clients.length} clients · portal access`, tone: 'navy' })}
       ${tile({ href: '#/company', icon: I.qa, title: 'Team & compliance', sub: 'Operatives, insurance, accreditations', tone: alerts ? 'orange' : 'green', badge: alerts ? `<span class="chip c-amber">${alerts}</span>` : '' })}

@@ -1,9 +1,9 @@
 // Offline-first app shell: sites often have no signal.
-const CACHE = 'injectatrace-v5';
+const CACHE = 'injectatrace-v6';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/ui.js', './js/installer.js', './js/office.js', './js/pin.js',
-  './js/home.js', './js/quotes.js', './js/reports.js', './js/admin.js', './js/pinlist.js',
+  './js/home.js', './js/quotes.js', './js/reports.js', './js/admin.js', './js/pinlist.js', './js/valuations.js',
   './js/elevation.js', './js/chart.js', './js/files.js',
   './icons/icon.svg', './icons/mark.svg', './icons/logo-injectaclad.png', './icons/logo-injecta-fire-barrier.png', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];

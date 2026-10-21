@@ -1,7 +1,7 @@
 // Hold point browser: search by HP number, sort, group and filter. Used by the job's Hold points tab
 // and the installer's Records. Options are remembered per list on this device.
 import * as db from './store.js';
-import { esc, I, openSheet, readJSON, writeJSON, num, ago, rowItem, iconBubble, qaChip } from './ui.js';
+import { esc, I, openSheet, readJSON, writeJSON, num, ago, rowItem, iconBubble, qaChip, setAction } from './ui.js';
 
 const SORTS = [['no', 'Hold point no.'], ['face', 'Face'], ['level', 'Level, top down'], ['newest', 'Newest first']];
 const GROUPS = [['none', 'No grouping'], ['face', 'By face'], ['level', 'By level'], ['status', 'By QA status']];
@@ -31,7 +31,10 @@ export function pinRow(p, { showSite = false, hide = '', compact = false } = {})
  * pinBrowser(host, { pins, key, showSite, installers })
  *  pins: hold points to browse; key: storage key for remembered options
  */
-export function pinBrowser(host, { pins, key, showSite = false, installers = true, defaults = {} }) {
+export function pinBrowser(host, { pins, key, showSite = false, installers = true, defaults = {}, main = null, onPass = null }) {
+  let selecting = false;
+  const picked = new Set();
+  const pickable = (p) => p.qa === 'pending';
   const storeKey = `injectatrace.pins.${key}`;
   const base = { ...DEFAULTS, ...defaults };
   let o = { ...base, ...readJSON(storeKey, {}) };
@@ -77,12 +80,25 @@ export function pinBrowser(host, { pins, key, showSite = false, installers = tru
     return c;
   }
 
+  // In select mode rows become tick boxes (only hold points awaiting QA can be picked).
+  const row = (p, extra) => (selecting && pickable(p)
+    ? rowItem({ lead: iconBubble(I.capture, 'red'), title: `<span class="mono">${db.pinLabel(p)}</span> · ${esc(faceName(p))} · ${esc(p.level)}`, sub: `${num(p.length)} m · ${p.socks.map((x) => `${x}mm`).join('+')}${db.photoGaps(p).length ? ` · <span style="color:var(--red);font-weight:700">${db.photoGaps(p).length} photo gap${db.photoGaps(p).length > 1 ? 's' : ''}</span>` : ''}`, trail: `<input type="checkbox" data-pick="${p.id}" ${picked.has(p.id) ? 'checked' : ''} aria-label="Select ${db.pinLabel(p)}" style="width:26px;height:26px">` })
+    : pinRow(p, extra));
+
+  function bar() {
+    if (!main) return;
+    if (!selecting) { setAction(main, null); return; }
+    const b = setAction(main, `<button class="btn secondary" id="pcancel">Cancel</button><button class="btn good" id="ppass" ${picked.size ? '' : 'disabled'}>${I.check}Pass ${picked.size} selected</button>`);
+    b.querySelector('#pcancel').addEventListener('click', () => { selecting = false; picked.clear(); draw(); });
+    b.querySelector('#ppass').addEventListener('click', () => { const ids = [...picked]; selecting = false; picked.clear(); setAction(main, null); onPass(ids); });
+  }
+
   function draw() {
     const list = filtered();
     const active = chips();
     let body = '';
     if (o.group === 'none') {
-      body = `<div class="group">${list.slice(0, shown).map((p) => pinRow(p, { showSite, compact: true })).join('') || '<div class="empty">No hold points match.</div>'}</div>`;
+      body = `<div class="group">${list.slice(0, shown).map((p) => row(p, { showSite, compact: true })).join('') || '<div class="empty">No hold points match.</div>'}</div>`;
     } else {
       const groups = new Map();
       list.forEach((p) => { const g = groupOf[o.group](p); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(p); });
@@ -94,7 +110,7 @@ export function pinBrowser(host, { pins, key, showSite = false, installers = tru
         const take = ps.slice(0, Math.max(0, budget));
         budget -= take.length;
         if (!take.length) return '';
-        return `<div class="group"><div class="gh pgh"><span>${esc(g)}</span><span class="pgh-n"><span class="dot" style="color:var(--green)"></span>${green}<span class="dot" style="color:var(--red);margin-left:8px"></span>${ps.length - green}<span class="mono" style="margin-left:8px">${ps.length}</span></span></div>${take.map((p) => pinRow(p, { showSite, compact: true, hide: o.group })).join('')}</div>`;
+        return `<div class="group"><div class="gh pgh"><span>${esc(g)}</span><span class="pgh-n"><span class="dot" style="color:var(--green)"></span>${green}<span class="dot" style="color:var(--red);margin-left:8px"></span>${ps.length - green}<span class="mono" style="margin-left:8px">${ps.length}</span>${selecting && ps.some(pickable) ? `<button type="button" class="btn sm" data-gall="${esc(g)}" style="margin-left:10px">Tick ${ps.filter(pickable).length}</button>` : ''}</span></div>${take.map((p) => row(p, { showSite, compact: true, hide: o.group })).join('')}</div>`;
       }).join('') || '<div class="group"><div class="empty">No hold points match.</div></div>';
     }
     host.innerHTML = `
@@ -102,6 +118,9 @@ export function pinBrowser(host, { pins, key, showSite = false, installers = tru
         <label class="search"><span class="sr">Find hold point number</span>${I.records}<input type="text" inputmode="numeric" id="pq" placeholder="Find HP no." value="${esc(o.q)}" autocomplete="off"></label>
         <button type="button" class="btn" id="popts" aria-haspopup="dialog">${I.filter}Sort &amp; filter${active.length ? ` <span class="chip c-navy" style="padding:1px 8px">${active.length}</span>` : ''}</button>
       </div>
+      ${onPass ? `<div class="row" style="gap:8px;margin:8px 0 4px">${selecting
+        ? `<button type="button" class="btn sm" id="pall">Tick all ${list.filter(pickable).length} awaiting QA</button><button type="button" class="btn sm" id="pready">Tick complete only</button><button type="button" class="btn sm ghost" id="pnone">Clear</button>`
+        : `<button type="button" class="btn sm" id="psel">${I.check}Select to pass QA</button>`}</div>` : ''}
       <p class="muted small pinmeta">${list.length} of ${pins.length} · ${SORTS.find((s) => s[0] === o.sort)[1].toLowerCase()}${o.group !== 'none' ? ` · ${GROUPS.find((g) => g[0] === o.group)[1].toLowerCase()}` : ''}</p>
       ${active.length ? `<div class="row" style="gap:8px;margin:-4px 0 12px">${active.map(([k, v, l]) => `<button type="button" class="btn sm fchip" data-k="${k}" data-v="${esc(v)}" aria-label="Remove filter ${esc(l)}">${esc(l)}${I.x}</button>`).join('')}<button type="button" class="btn sm ghost" id="pclear">Clear all</button></div>` : ''}
       ${body}
@@ -115,6 +134,14 @@ export function pinBrowser(host, { pins, key, showSite = false, installers = tru
       const nq = host.querySelector('#pq'); nq.focus(); nq.setSelectionRange(pos, pos);
     });
     host.querySelector('#popts').addEventListener('click', openOpts);
+    host.querySelector('#psel')?.addEventListener('click', () => { selecting = true; draw(); });
+    const tick = (ps) => { ps.filter(pickable).forEach((p) => picked.add(p.id)); draw(); };
+    host.querySelector('#pall')?.addEventListener('click', () => tick(list));
+    host.querySelector('#pready')?.addEventListener('click', () => { picked.clear(); tick(list.filter(db.readyForQA)); });
+    host.querySelector('#pnone')?.addEventListener('click', () => { picked.clear(); draw(); });
+    host.querySelectorAll('[data-gall]').forEach((b) => b.addEventListener('click', () => tick(list.filter((p) => groupOf[o.group](p) === b.dataset.gall))));
+    host.querySelectorAll('[data-pick]').forEach((c) => c.addEventListener('change', () => { if (c.checked) picked.add(c.dataset.pick); else picked.delete(c.dataset.pick); bar(); }));
+    bar();
     host.querySelector('#pmore')?.addEventListener('click', () => { shown += PAGE; draw(); });
     host.querySelector('#pclear')?.addEventListener('click', () => { Object.assign(o, { status: [], faces: [], installer: 'all' }); save(); draw(); });
     host.querySelectorAll('.fchip').forEach((b) => b.addEventListener('click', () => {

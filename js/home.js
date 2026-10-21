@@ -40,7 +40,9 @@ export function viewHome(ctx) {
   const jobIssues = alerts.filter((a) => a.href !== '#/company');
   const toWin = quotes.filter((q) => q.status === 'accepted' && !q.jobId);
 
+  const due = db.valuationsDue(sess);
   const todo = [
+    due.length && { href: due.length === 1 ? `#/valuations/${due[0].st.id}` : '#/valuations', tone: 'green', icon: I.records, title: `${due.length} valuation${due.length > 1 ? 's' : ''} due`, sub: `${esc(due[0].st.name)} · fortnight ended ${new Date(due[0].per.to).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` },
     pending && { href: '#/qa', tone: 'red', icon: I.qa, title: `${pending} hold point${pending > 1 ? 's' : ''} awaiting QA`, sub: 'Pass them or send back for rework' },
     toWin.length && { href: `#/quotes/${toWin[0].id}`, tone: 'green', icon: I.sites, title: `${toWin.length} won quote${toWin.length > 1 ? 's' : ''} to set up as a job`, sub: esc(toWin[0].title) },
     expiring.length && { href: '#/quotes?f=open', tone: 'orange', icon: I.clock, title: `${expiring.length} quote${expiring.length > 1 ? 's' : ''} expiring this week`, sub: 'Chase before they lapse' },

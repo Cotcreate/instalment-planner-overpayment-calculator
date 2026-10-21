@@ -19,7 +19,7 @@ const VIEWPORTS = [
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64');
 const failures = [];
 const fail = (m) => { failures.push(m); console.log('  FAIL', m); };
-const state = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v5')));
+const state = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('injectatrace.v6')));
 
 async function audit(page, vp, label) {
   await page.waitForTimeout(150);
@@ -173,7 +173,7 @@ async function run(browser, vp) {
   const groups = await page.$$eval('.pgh > span:first-child', (h) => h.map((x) => x.textContent));
   const lv = (l) => (l === 'Ground' ? 0 : +l.replace(/\D/g, ''));
   if (groups.some((g, i) => i && lv(g) > lv(groups[i - 1]))) fail(`[${vp.name}] level groups not top-down: ${groups.join(',')}`);
-  const firstGroup = await page.$$eval('.group:first-of-type .ri-title .mono, .pinbar ~ .group .ri-title .mono', (t) => t.slice(0, 8).map((x) => +x.textContent.replace(/\D/g, '')));
+  const firstGroup = (await page.locator('.pinbar ~ .group').first().locator('.ri-title .mono').allTextContents()).map((x) => +x.replace(/\D/g, ''));
   if (firstGroup.some((n, i) => i && n < firstGroup[i - 1])) fail(`[${vp.name}] hold points not sorted by number within group`);
   if (await page.locator('.pinbar ~ .group .chip.c-red').count()) fail(`[${vp.name}] status filter let red pins through`);
   await audit(page, vp, '12c-pins-grouped');
@@ -226,9 +226,59 @@ async function run(browser, vp) {
   if (await page.locator('#next').isDisabled()) fail(`[${vp.name}] backend quote step 1 blocked`);
   await tap(page.locator('#cancel'));
 
+  // ===== Invoicing: bulk QA, then a fortnightly valuation =====
+  await go('qa', 'h1');
+  const pendingBefore = (await state(page)).pins.filter((p) => p.qa === 'pending').length;
+  await tap(page.locator('[data-pass=all]'));
+  await sheetOpen();
+  await tap(page.locator('.sheet [data-primary]'));
+  await sheetClosed();
+  const stQA = await state(page);
+  const pendingAfter = stQA.pins.filter((p) => p.qa === 'pending');
+  if (!(pendingAfter.length < pendingBefore)) fail(`[${vp.name}] bulk pass did nothing`);
+  if (pendingAfter.some((p) => !Object.values(p.photos).some((l) => !l.length) && p.batch)) fail(`[${vp.name}] complete hold points left in QA`);
+  await audit(page, vp, '13e-qa-after-bulk');
+
+  // Select mode on the hold points list
+  await go('jobs/s1/pins', '#psel');
+  await tap(page.locator('#psel'));
+  await tap(page.locator('#pall'));
+  const picked = await page.locator('[data-pick]:checked').count();
+  await audit(page, vp, '13f-select-mode');
+  if (picked) {
+    await tap(page.locator('#ppass'));
+    await page.waitForTimeout(200);
+    if ((await state(page)).pins.filter((p) => p.siteId === 's1' && p.qa === 'pending').length) fail(`[${vp.name}] select-and-pass left pins pending`);
+  }
+
+  await go('valuations', '.hero');
+  await audit(page, vp, '13g-valuations');
+  await go('valuations/s1', '#issue');
+  await audit(page, vp, '13h-valuation-prepare');
+  const vBefore = (await state(page)).valuations.filter((v) => v.jobId === 's1').length;
+  await tap(page.locator('#issue'));
+  await sheetOpen();
+  await tap(page.locator('.sheet [data-primary]'));
+  await page.waitForSelector('.vdoc');
+  const stV = await state(page);
+  const val = stV.valuations.filter((v) => v.jobId === 's1').at(-1);
+  if (stV.valuations.filter((v) => v.jobId === 's1').length !== vBefore + 1 || !val.pinIds.length) fail(`[${vp.name}] valuation not issued`);
+  const earlier = new Set(stV.valuations.filter((v) => v.jobId === 's1' && v.id !== val.id).flatMap((v) => v.pinIds));
+  if (val.pinIds.some((id) => earlier.has(id))) fail(`[${vp.name}] hold point billed twice`);
+  if (await page.locator('.vdoc table.sched tbody tr').count() !== val.pinIds.length) fail(`[${vp.name}] schedule row count wrong`);
+  await audit(page, vp, '13i-valuation-report');
+  const dlv = page.waitForEvent('download');
+  await tap(page.locator('#xls'));
+  if (!(await dlv).suggestedFilename().startsWith(`Valuation-${val.no}-`)) fail(`[${vp.name}] valuation spreadsheet not downloaded`);
+  // Same period again must be empty
+  const d0 = new Date(val.from), d1 = new Date(val.to);
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  await go(`valuations/s1?from=${iso(d0)}&to=${iso(d1)}`, '#issue');
+  if (!(await page.locator('#issue').isDisabled())) fail(`[${vp.name}] same period can be billed again`);
+
   // ===== Client: accepts the quote in their portal =====
   // Castlefield has no demo login, so hand the quote to Northgate for the portal test.
-  await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('injectatrace.v5')); s.quotes.find((q) => q.id === id).clientId = 'c1'; localStorage.setItem('injectatrace.v5', JSON.stringify(s)); }, quote.id);
+  await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('injectatrace.v6')); s.quotes.find((q) => q.id === id).clientId = 'c1'; localStorage.setItem('injectatrace.v6', JSON.stringify(s)); }, quote.id);
   await signIn('client');
   await page.waitForSelector('.hero');
   await audit(page, vp, '14-client-home');
@@ -246,6 +296,10 @@ async function run(browser, vp) {
   if (/Pails used|Materials|£/.test(await page.locator('main').innerText())) fail(`[${vp.name}] client can see pails or costs`);
   await go('jobs/s1', '.seg');
   if (await page.locator('a[href$="/team"]').count()) fail(`[${vp.name}] client can see team`);
+  await go('jobs/s1/valuations', '.group');
+  await tap(page.locator('a.ri[href^="#/valuation/"]').first());
+  await page.waitForSelector('.vdoc');
+  await audit(page, vp, '15b-client-valuation');
 
   // ===== Manager: won quote -> job for Jay only =====
   await signIn('manager');

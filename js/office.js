@@ -9,6 +9,7 @@ import {
 import { jobRow } from './home.js';
 import { quoteRow } from './quotes.js';
 import { pinRow, pinBrowser } from './pinlist.js';
+import { jobValuations } from './valuations.js';
 
 export { pinRow };
 
@@ -101,7 +102,7 @@ export async function viewJob(ctx, id, tab = 'overview', params) {
   if (!st || !db.sitesFor(sess).includes(st)) { main.innerHTML = '<p class="empty card">Job not found.</p>'; setAction(main, null); return; }
   const s = db.siteStats(st);
   const issues = isStaff ? s.missingDocs.length + s.unsigned.length : 0;
-  const tabs = [['overview', 'Overview'], ['pins', 'Hold points'], ['daily', 'Daily'], ['docs', 'Documents'], ...(isStaff ? [['team', 'Team']] : [])];
+  const tabs = [['overview', 'Overview'], ['pins', 'Hold points'], ['valuations', 'Valuations'], ['daily', 'Daily'], ['docs', 'Documents'], ...(isStaff ? [['team', 'Team']] : [])];
   if (!tabs.find((t) => t[0] === tab)) tab = 'overview';
 
   main.innerHTML = `
@@ -126,6 +127,7 @@ export async function viewJob(ctx, id, tab = 'overview', params) {
 
   if (tab === 'overview') await jobOverview(ctx, st, host);
   if (tab === 'pins') jobPins(ctx, st, host, params);
+  if (tab === 'valuations') jobValuations(ctx, st, host);
   if (tab === 'daily') jobDaily(ctx, st, host);
   if (tab === 'docs') jobDocs(ctx, st, host);
   if (tab === 'team') jobTeam(ctx, st, host);
@@ -201,7 +203,10 @@ async function jobOverview(ctx, st, host) {
 }
 
 function jobPins(ctx, st, host) {
-  pinBrowser(host, { pins: db.pinsFor(st.id), key: st.id });
+  pinBrowser(host, {
+    pins: db.pinsFor(st.id), key: st.id, main: ctx.main,
+    onPass: staff(ctx) ? (ids) => { db.passPins(ids, ctx.sess.name); toast(`${ids.length} hold point${ids.length > 1 ? 's' : ''} passed QA`); ctx.render(); } : null,
+  });
 }
 
 function jobDaily(ctx, st, host) {
@@ -348,11 +353,31 @@ export function viewQA(ctx) {
   const q = db.S().pins.filter((p) => p.qa === 'pending' && ids.has(p.siteId)).sort((a, b) => a.createdAt - b.createdAt);
   const bySite = {};
   q.forEach((p) => (bySite[p.siteId] ||= []).push(p));
+  const ready = q.filter(db.readyForQA);
   main.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Quality check · by pin number</p><h1>QA queue</h1></div><span class="chip ${q.length ? 'c-red' : 'c-green'}">${q.length} waiting</span></div>
-    <p class="muted">Pins stay red on the drawing until they pass QA, then turn green.</p>
-    ${Object.entries(bySite).map(([sid, ps]) => `${sectionHead(`<span style="display:inline-flex;align-items:center;gap:10px">${coLogo(db.jobInstaller(db.site(sid)), 56, 36)}${esc(db.site(sid).name)} <span class="mono muted" style="font-size:15px">${ps.length}</span></span>`)}<div class="group">${ps.map((p) => pinRow(p)).join('')}</div>`).join('')
+    ${ready.length ? `<section class="hero">
+      <p class="eyebrow">Complete and ready</p>
+      <div class="big">${ready.length}<small> of ${q.length}</small></div>
+      <p class="sub" style="margin:4px 0 0">Every photo heading and measurement is in. Pass them in one go; the ${q.length - ready.length} with gaps stay here for a proper look.</p>
+      <button class="btn accent block" style="margin-top:16px" data-pass="all">${I.check}Pass all ${ready.length} ready</button>
+    </section>` : '<p class="muted">Pins stay red on the drawing until they pass QA, then turn green.</p>'}
+    ${Object.entries(bySite).map(([sid, ps]) => {
+      const r = ps.filter(db.readyForQA);
+      return `<div class="section-h"><h2 style="display:inline-flex;align-items:center;gap:10px">${coLogo(db.jobInstaller(db.site(sid)), 56, 36)}${esc(db.site(sid).name)} <span class="mono muted" style="font-size:15px">${ps.length}</span></h2>${r.length ? `<button class="btn sm good" data-pass="${sid}" style="white-space:nowrap;flex:none">Pass ${r.length} ready</button>` : ''}</div>
+        <div class="group">${ps.sort((a, b) => db.readyForQA(b) - db.readyForQA(a) || a.no - b.no).map((p) => pinRow(p, { compact: true })).join('')}</div>`;
+    }).join('')
       || `<div class="group">${rowItem({ lead: iconBubble(I.check, 'green'), title: 'All clear', sub: 'Nothing waiting for QA' })}</div>`}`;
+  main.querySelectorAll('[data-pass]').forEach((b) => b.addEventListener('click', () => {
+    const list = ready.filter((p) => b.dataset.pass === 'all' || p.siteId === b.dataset.pass);
+    openSheet({
+      title: `Pass ${list.length} hold points`,
+      body: `<p>These have all 8 photo headings, cavity depth, sock, injected length, pins and batch number recorded.</p>
+        <p class="muted small">You can still open any of them afterwards and send it back for rework.</p>`,
+      primary: `Pass ${list.length}`,
+      onPrimary: () => { db.passPins(list.map((p) => p.id), ctx.sess.name); toast(`${list.length} hold points passed QA`); ctx.render(); },
+    });
+  }));
   setAction(main, null);
 }
 
