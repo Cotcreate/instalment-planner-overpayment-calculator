@@ -25,7 +25,7 @@
 
 ## 6. Status
 - **Stage:** Building (v0.1)
-- **Repo:** `Cotcreate/instalment-planner-overpayment-calculator` (⚠️ name mismatch: rename to `injectatrace`)
+- **Repo:** `Cotcreate/instalment-planner-overpayment-calculator` (⚠️ the name doesn't match the app: rename it to `injectatrace`)
 - **Open questions / to confirm:**
   - SS17 is tracked in litres against a per-project allocation, and "low" means less than 15% left. Is that right?
   - Work types, statuses (Complete / Partial / Defect) and targets are placeholders until the main spec lands.
