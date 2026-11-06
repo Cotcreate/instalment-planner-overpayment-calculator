@@ -15,7 +15,7 @@ for (let s = 1; s <= 300; s++) {
 console.log('cycles ok');
 
 function play(seed, manualSteps) {
-  const g = new Game(W, H, seed), ap = new Autopilot(g, seed * 7 + 1), r = rngFrom(seed * 13 + 5);
+  const g = new Game(W, H, seed, MAXF), ap = new Autopilot(g, seed * 7 + 1), r = rngFrom(seed * 13 + 5);
   g.status = 'playing';
   // Simulate a person playing a while (random but not suicidal) before switching auto on.
   for (let k = 0; k < manualSteps && g.status === 'playing'; k++) {
@@ -34,6 +34,8 @@ function play(seed, manualSteps) {
 
 let wins = 0, losses = 0, skipped = 0, moves = 0;
 const GAMES = +(process.argv[2] || 120);
+const MAXF = +(process.argv[3] || 1);   // apples on screen: 1 classic, 5 feast
+console.log('apples on board:', MAXF);
 for (let s = 1; s <= GAMES; s++) {
   const manual = s % 3 === 0 ? 0 : Math.floor(rngFrom(s)() * 400);
   const res = play(s, manual);
@@ -47,7 +49,7 @@ if (losses) process.exit(1);
 // 2. Auto on -> off (person plays a bit) -> back on. Guaranteed range: snake under 100 long.
 let w2 = 0, l2 = 0, trapped = 0;
 for (let s = 1; s <= GAMES; s++) {
-  const g = new Game(W, H, 1000 + s), ap = new Autopilot(g, 2000 + s), r = rngFrom(3000 + s);
+  const g = new Game(W, H, 1000 + s, MAXF), ap = new Autopilot(g, 2000 + s), r = rngFrom(3000 + s);
   g.status = 'playing';
   const target = 5 + Math.floor(r() * 90);
   while (g.status === 'playing' && g.snake.length < target) g.step(ap.decide());

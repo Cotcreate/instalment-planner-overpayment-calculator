@@ -3,7 +3,7 @@
 // your sketch draws the board and calls step() on a timer.
 //
 //   SnakeGame game;  SnakeAutopilot pilot;
-//   game.reset(esp_random());  pilot.reset(esp_random());
+//   game.reset(esp_random(), 1);  pilot.reset(esp_random());   // 1 = classic, 5 = feast
 //   game.status = SnakeGame::PLAYING;
 //   every tick:  game.step(autoOn ? pilot.decide(game) : -1);
 //   on input:    game.turn(dir);            // 0 up, 1 right, 2 down, 3 left
@@ -14,6 +14,7 @@
 namespace snake {
 
 constexpr int W = 16, H = 17, N = W * H;  // W must be even (see README)
+constexpr int MAX_FOOD = 5;
 constexpr int8_t DX[4] = {0, 1, 0, -1};
 constexpr int8_t DY[4] = {-1, 0, 1, 0};
 
@@ -114,7 +115,9 @@ struct SnakeGame {
   int16_t body[N];   // ring buffer, head at body[headAt], tail at body[tailAt]
   int headAt = 0, tailAt = 0, len = 0;
   uint8_t occ[N];
-  int dir = 1, food = -1, score = 0;
+  int dir = 1, score = 0;
+  int16_t foods[MAX_FOOD]; int nFood = 0, maxFood = 1;
+  uint8_t isFood[N];
   uint32_t moves = 0;
   int8_t queue[2]; int qn = 0;
   Status status = READY;
@@ -125,9 +128,11 @@ struct SnakeGame {
   int head() const { return body[headAt]; }
   int tail() const { return body[tailAt]; }
 
-  void reset(uint32_t seed) {
+  void reset(uint32_t seed, int apples = 1) {
     rng.seed(seed);
+    maxFood = apples < 1 ? 1 : apples > MAX_FOOD ? MAX_FOOD : apples;
     memset(occ, 0, sizeof occ);
+    memset(isFood, 0, sizeof isFood); nFood = 0;
     int hx = W / 2, hy = H / 2;
     len = 3; tailAt = 0; headAt = 2;
     for (int k = 0; k < 3; k++) { int c = hy * W + hx - 2 + k; body[k] = c; occ[c] = 1; }
@@ -135,11 +140,22 @@ struct SnakeGame {
     spawnFood();
   }
 
+  // Top up to maxFood apples on random empty cells.
   void spawnFood() {
-    int free = N - len;
-    if (free <= 0) { food = -1; return; }
-    int pick = rng.below(free);
-    for (int c = 0; c < N; c++) if (!occ[c]) { if (pick == 0) { food = c; return; } pick--; }
+    while (nFood < maxFood) {
+      int free = N - len - nFood;
+      if (free <= 0) return;
+      int pick = rng.below(free);
+      for (int c = 0; c < N; c++) if (!occ[c] && !isFood[c]) {
+        if (pick == 0) { foods[nFood++] = c; isFood[c] = 1; break; }
+        pick--;
+      }
+    }
+  }
+
+  void setMaxFood(int apples) {  // extras above a lowered limit just get eaten
+    maxFood = apples < 1 ? 1 : apples > MAX_FOOD ? MAX_FOOD : apples;
+    if (status != WON) spawnFood();
   }
 
   bool turn(int d) {
@@ -160,7 +176,7 @@ struct SnakeGame {
     int n = neighbor(head(), d);
     moves++;
     if (n < 0) { status = DEAD; death = WALL; return; }
-    bool grow = n == food;
+    bool grow = isFood[n];
     int oldTail = tail();
     if (!grow) { occ[oldTail] = 0; tailAt = (tailAt + 1) % N; len--; }
     if (occ[n]) {
@@ -169,8 +185,10 @@ struct SnakeGame {
     }
     headAt = (headAt + 1) % N; body[headAt] = n; occ[n] = 1; len++;
     if (grow) {
+      isFood[n] = 0;
+      for (int k = 0; k < nFood; k++) if (foods[k] == n) { foods[k] = foods[--nFood]; break; }
       score++;
-      if (len == N) { food = -1; status = WON; return; }
+      if (len == N) { status = WON; return; }
       spawnFood();
     }
   }
@@ -200,19 +218,21 @@ struct SnakeAutopilot {
   static bool safeToFollow(const SnakeGame& g, const Cycle& c) {
     static uint8_t occ[N];
     static int16_t ring[N + 4];
+    static uint8_t food[N];
     constexpr int CAP = N + 4;
     memcpy(occ, g.occ, N);
+    memcpy(food, g.isFood, N);
     for (int k = 0; k < g.len; k++) ring[k] = g.at(g.len - 1 - k);
-    int tailAt = 0, headAt = g.len - 1, len = g.len, food = g.food;
+    int tailAt = 0, headAt = g.len - 1, len = g.len;
     int pos = c.ord[g.head()], steps = g.len + 2;
     for (int k = 0; k < steps; k++) {
       pos = (pos + 1) % N;
       int nx = c.seq[pos];
-      bool grow = nx == food;
+      bool grow = food[nx];
       if (!grow) { occ[ring[tailAt]] = 0; tailAt = (tailAt + 1) % CAP; len--; }
       if (occ[nx]) return false;
       occ[nx] = 1; headAt = (headAt + 1) % CAP; ring[headAt] = nx; len++;
-      if (grow) { food = -1; if (len == N) return true; }
+      if (grow) { food[nx] = 0; if (len == N) return true; }
     }
     return true;
   }
@@ -242,7 +262,7 @@ struct SnakeAutopilot {
       flags[d] = false;
       int n = neighbor(g.head(), d);
       if (n < 0) continue;
-      bool grow = n == g.food;
+      bool grow = g.isFood[n];
       int tail = g.tail();
       if (g.occ[n] && !(n == tail && !grow)) continue;
       memcpy(occ, g.occ, N);
@@ -263,8 +283,12 @@ struct SnakeAutopilot {
         }
       }
       flags[d] = tailOk;
-      int fx = g.food % W, fy = g.food / W, nx = n % W, ny = n / W;
-      int md = (fx > nx ? fx - nx : nx - fx) + (fy > ny ? fy - ny : ny - fy);
+      int nx = n % W, ny = n / W, md = 99;
+      for (int q = 0; q < g.nFood; q++) {
+        int fx = g.foods[q] % W, fy = g.foods[q] / W;
+        int m = (fx > nx ? fx - nx : nx - fx) + (fy > ny ? fy - ny : ny - fy);
+        if (m < md) md = m;
+      }
       long score = (tailOk ? 10000000L : 0) + count * 100L - md + (grow && tailOk ? 50 : 0);
       if (score > bestScore) { bestScore = score; best = d; }
     }
@@ -289,8 +313,12 @@ struct SnakeAutopilot {
       return dirTo(head, cycle.next(head));
     }
 
-    int h = cycle.ord[head], t = cycle.ord[g.tail()], f = cycle.ord[g.food];
-    int toTail = dist(h, t), toFood = dist(h, f);
+    int h = cycle.ord[head], t = cycle.ord[g.tail()];
+    int toTail = dist(h, t), toFood = N;
+    for (int q = 0; q < g.nFood; q++) {  // next apple along the route
+      int fd = dist(h, cycle.ord[g.foods[q]]);
+      if (fd < toFood) toFood = fd;
+    }
     int free = N - g.len - 1;
     int cut = toTail - 4;
     if (free < N / 2) cut = 0;

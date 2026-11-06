@@ -107,8 +107,10 @@
   }
 
   /* ---------- Game ---------- */
-  function Game(W, H, seed) {
+  // maxFood: apples on the board at once (1 = classic, 5 = feast).
+  function Game(W, H, seed, maxFood) {
     this.W = W; this.H = H; this.N = W * H;
+    this.maxFood = maxFood || 1;
     this.rng = rngFrom(seed == null ? (Math.random() * 4294967296) >>> 0 : seed);
     this.reset();
   }
@@ -126,15 +128,28 @@
     this.score = 0;
     this.moves = 0;
     this.lastEat = -1;
+    this.foods = [];
+    this.isFood = new Uint8Array(this.N);
     this.spawnFood();
   };
 
+  Game.prototype.setMaxFood = function (k) {
+    this.maxFood = k;            // extras above a lowered limit just get eaten, not replaced
+    if (this.status !== 'won') this.spawnFood();
+  };
+
+  // Top up to maxFood apples on random empty cells.
   Game.prototype.spawnFood = function () {
-    var free = this.N - this.snake.length;
-    if (free <= 0) { this.food = -1; return; }
-    var pick = Math.floor(this.rng() * free);
-    for (var c = 0; c < this.N; c++) {
-      if (!this.occ[c]) { if (pick === 0) { this.food = c; return; } pick--; }
+    while (this.foods.length < this.maxFood) {
+      var free = this.N - this.snake.length - this.foods.length;
+      if (free <= 0) return;
+      var pick = Math.floor(this.rng() * free);
+      for (var c = 0; c < this.N; c++) {
+        if (!this.occ[c] && !this.isFood[c]) {
+          if (pick === 0) { this.foods.push(c); this.isFood[c] = 1; break; }
+          pick--;
+        }
+      }
     }
   };
 
@@ -161,19 +176,23 @@
     var head = this.snake[0], n = this.neighbor(head, d);
     this.moves++;
     if (n < 0) { this.status = 'dead'; this.deathReason = 'wall'; return; }
-    var grow = n === this.food;
+    var grow = this.isFood[n] === 1;
     if (!grow) { var t = this.snake.pop(); this.occ[t] = 0; }
     if (this.occ[n]) { this.status = 'dead'; this.deathReason = 'self'; if (!grow) { this.snake.push(t); this.occ[t] = 1; } return; }
     this.snake.unshift(n); this.occ[n] = 1;
     if (grow) {
+      this.isFood[n] = 0;
+      this.foods.splice(this.foods.indexOf(n), 1);
       this.score++;
       this.lastEat = this.moves;
-      if (this.snake.length === this.N) { this.food = -1; this.status = 'won'; return; }
+      if (this.snake.length === this.N) { this.status = 'won'; return; }
       this.spawnFood();
     }
   };
 
   /* ---------- Autopilot ----------
+   * Works with any number of apples: it always aims for the next one along
+   * its route, and extra growth never breaks the cycle guarantee.
    * Follows a random Hamiltonian cycle, which on its own guarantees a full
    * board. To look like a person rather than a lawnmower it cuts corners
    * toward the food while the board is roomy, but only along moves that keep
@@ -212,15 +231,17 @@
     occ.set(g.occ);
     for (var k = 0; k < L; k++) ring[k] = s[L - 1 - k];
     var tailAt = 0, headAt = L - 1, len = L, cap = ring.length;
-    var food = g.food, h = s[0], pos = cyc.ord[h], steps = L + 2;
+    var food = this._food || (this._food = new Uint8Array(N));
+    food.set(g.isFood);
+    var h = s[0], pos = cyc.ord[h], steps = L + 2;
     for (k = 0; k < steps; k++) {
       pos = (pos + 1) % N;
       var nx = cyc.seq[pos];
-      var grow = nx === food;
+      var grow = food[nx] === 1;
       if (!grow) { occ[ring[tailAt]] = 0; tailAt = (tailAt + 1) % cap; len--; }
       if (occ[nx]) return false;
       occ[nx] = 1; headAt = (headAt + 1) % cap; ring[headAt] = nx; len++;
-      if (grow) { food = -1; if (len === N) return true; }
+      if (grow) { food[nx] = 0; if (len === N) return true; }
     }
     return true;
   };
@@ -246,7 +267,7 @@
     for (var d = 0; d < 4; d++) {
       var n = g.neighbor(head, d);
       if (n < 0) continue;
-      var grow = n === g.food;
+      var grow = g.isFood[n] === 1;
       var tail = g.snake[g.snake.length - 1];
       if (g.occ[n] && !(n === tail && !grow)) continue;
       // Board after the move.
@@ -268,8 +289,12 @@
         }
       }
       flags[d] = tailOk;
-      var fx = g.food % W, fy = (g.food / W) | 0, nx = n % W, ny = (n / W) | 0;
-      var score = (tailOk ? 1e7 : 0) + count * 100 - (Math.abs(fx - nx) + Math.abs(fy - ny)) + (grow && tailOk ? 50 : 0);
+      var nx = n % W, ny = (n / W) | 0, near = 99;
+      for (var q = 0; q < g.foods.length; q++) {
+        var fq = g.foods[q], md = Math.abs(fq % W - nx) + Math.abs(((fq / W) | 0) - ny);
+        if (md < near) near = md;
+      }
+      var score = (tailOk ? 1e7 : 0) + count * 100 - near + (grow && tailOk ? 50 : 0);
       if (score > bestScore) { bestScore = score; best = d; }
     }
     return flagsOnly ? flags : best;
@@ -296,8 +321,12 @@
     }
 
     var cyc = this.cycle, ord = cyc.ord;
-    var h = ord[head], t = ord[g.snake[g.snake.length - 1]], f = ord[g.food];
-    var toTail = dist(h, t, N), toFood = dist(h, f, N);
+    var h = ord[head], t = ord[g.snake[g.snake.length - 1]];
+    var toTail = dist(h, t, N), toFood = N;
+    for (var q = 0; q < g.foods.length; q++) {   // next apple along the route
+      var fd = dist(h, ord[g.foods[q]], N);
+      if (fd < toFood) toFood = fd;
+    }
     var free = N - g.snake.length - 1;
 
     var cut = toTail - 4;                       // never run up close behind the tail
