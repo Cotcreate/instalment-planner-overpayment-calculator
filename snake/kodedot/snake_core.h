@@ -197,11 +197,75 @@ struct SnakeGame {
 // ---------------- Autopilot ----------------
 struct SnakeAutopilot {
   Cycle cycle, trial;
-  bool hasCycle = false;
+  bool hasCycle = false, greedyOff = false;
   uint32_t tick = 0;
   Rng rng;
 
-  void reset(uint32_t seed = 0) { if (seed) rng.seed(seed); hasCycle = false; }
+  // Early game: below this length (3 + 25 apples) head straight for the nearest apple.
+  static constexpr int GREEDY_LEN = 28;
+
+  void reset(uint32_t seed = 0) { if (seed) rng.seed(seed); hasCycle = false; greedyOff = false; }
+
+  // Survivable if the head can catch up with its own trail (a body cell that has
+  // emptied by the time the head gets there), or has more room than the snake is long.
+  // body[0] = head. Each apple on the board may hold the tail still for a move.
+  static bool escapable(const int16_t* body, int L, const uint8_t* occ, int slack) {
+    static int16_t freeAt[N], dist[N], q[N];
+    memset(freeAt, 0, sizeof freeAt);
+    for (int j = 0; j < L; j++) freeAt[body[L - 1 - j]] = j + 1 + slack;
+    for (int c = 0; c < N; c++) dist[c] = -1;
+    int qh = 0, qt = 0, room = 0;
+    dist[body[0]] = 0; q[qt++] = body[0];
+    while (qh < qt) {
+      int c = q[qh++];
+      for (int d = 0; d < 4; d++) {
+        int m = neighbor(c, d);
+        if (m < 0 || dist[m] >= 0) continue;
+        int t = dist[c] + 1;
+        if (occ[m]) { if (freeAt[m] && t >= freeAt[m]) return true; continue; }
+        dist[m] = t; q[qt++] = m;
+        if (++room >= L) return true;
+      }
+    }
+    return false;
+  }
+
+  // Shortest path to the nearest apple, only if the snake can still escape after
+  // eating it. Returns a direction, or -1 if there's no safe dash.
+  static int greedy(const SnakeGame& g) {
+    static int16_t prev[N], q[N], path[N], body[N + 1];
+    static uint8_t occ[N], food[N];
+    int head = g.head(), tail = g.tail();
+    for (int c = 0; c < N; c++) prev[c] = -2;
+    prev[head] = -1;
+    int qh = 0, qt = 0, target = -1;
+    q[qt++] = head;
+    while (qh < qt && target < 0) {
+      int c = q[qh++];
+      for (int d = 0; d < 4; d++) {
+        int m = neighbor(c, d);
+        if (m < 0 || prev[m] != -2 || (g.occ[m] && m != tail)) continue;
+        prev[m] = c; q[qt++] = m;
+        if (g.isFood[m]) { target = m; break; }
+      }
+    }
+    if (target < 0) return -1;
+    int pl = 0;
+    for (int p = target; p != head; p = prev[p]) path[pl++] = p;
+    // Walk a copy of the snake along the path (path is stored end-first).
+    int L = g.len;
+    for (int k = 0; k < L; k++) body[k] = g.at(k);
+    memcpy(occ, g.occ, N); memcpy(food, g.isFood, N);
+    for (int k = pl - 1; k >= 0; k--) {
+      int n = path[k]; bool grow = food[n];
+      if (!grow) occ[body[--L]] = 0;
+      if (occ[n]) return -1;
+      memmove(body + 1, body, L * sizeof(int16_t)); body[0] = n; L++; occ[n] = 1;
+      if (grow) food[n] = 0;
+    }
+    if (L < N && !escapable(body, L, occ, g.maxFood)) return -1;
+    return dirTo(head, path[pl - 1]);
+  }
 
   static int dist(int a, int b) { return (b - a + N) % N; }
 
@@ -297,6 +361,11 @@ struct SnakeAutopilot {
 
   int decide(const SnakeGame& g) {
     int head = g.head();
+    if (g.len < GREEDY_LEN && !greedyOff) {
+      int gd = greedy(g);
+      if (gd >= 0) { hasCycle = false; return gd; }  // fresh route picked when the dash phase ends
+      greedyOff = true;                               // first sign of risk: play safe from here on
+    }
     if (!hasCycle || !aligned(g, cycle)) {
       if (!hasCycle || !safeToFollow(g, cycle)) {
         tick++;

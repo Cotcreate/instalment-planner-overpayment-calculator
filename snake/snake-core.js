@@ -206,7 +206,77 @@
     this.cycle = null;
   }
 
-  Autopilot.prototype.reset = function () { this.cycle = null; };
+  Autopilot.prototype.reset = function () { this.cycle = null; this.greedyOff = false; };
+
+  // Early game: while the snake is shorter than this (3 + 25 apples) it just
+  // heads straight for the nearest apple, like a person would.
+  Autopilot.prototype.GREEDY_LEN = 28;
+
+  // Is this position survivable? True if the head can catch up with its own
+  // trail (a body cell that has moved on by the time the head gets there),
+  // or simply has more open room than the snake is long.
+  Autopilot.prototype.escapable = function (body, occ) {
+    var g = this.g, N = g.N, L = body.length;
+    var free = this._free || (this._free = new Int32Array(N));   // move on which a body cell empties
+    var dist = this._dist || (this._dist = new Int32Array(N));
+    var q = this._q || (this._q = new Int32Array(N));
+    // Every apple eaten on the way holds the tail still for a move, so assume
+    // the worst: each apple on the board gets eaten before the trail clears.
+    var slack = g.maxFood;
+    free.fill(0);
+    for (var j = 0; j < L; j++) free[body[L - 1 - j]] = j + 1 + slack;  // tail empties after 1 move
+    dist.fill(-1); dist[body[0]] = 0;
+    var qh = 0, qt = 0, room = 0;
+    q[qt++] = body[0];
+    while (qh < qt) {
+      var c = q[qh++];
+      for (var d = 0; d < 4; d++) {
+        var m = g.neighbor(c, d);
+        if (m < 0 || dist[m] >= 0) continue;
+        var t = dist[c] + 1;
+        if (occ[m]) { if (free[m] && t >= free[m]) return true; continue; }
+        dist[m] = t; q[qt++] = m;
+        if (++room >= L) return true;
+      }
+    }
+    return false;
+  };
+
+  // Shortest path to the nearest apple, taken only if, after eating it, the
+  // snake can still reach its own tail (so it can never box itself in).
+  // Returns a direction, or -1 if there's no safe dash.
+  Autopilot.prototype.greedy = function () {
+    var g = this.g, N = g.N, s = g.snake, head = s[0], tail = s[s.length - 1];
+    var prev = this._prev || (this._prev = new Int32Array(N));
+    var q = this._gq || (this._gq = new Int32Array(N));
+    prev.fill(-2); prev[head] = -1;
+    var qh = 0, qt = 0, target = -1;
+    q[qt++] = head;
+    while (qh < qt && target < 0) {
+      var c = q[qh++];
+      for (var d = 0; d < 4; d++) {
+        var m = g.neighbor(c, d);
+        if (m < 0 || prev[m] !== -2 || (g.occ[m] && m !== tail)) continue;
+        prev[m] = c; q[qt++] = m;
+        if (g.isFood[m]) { target = m; break; }
+      }
+    }
+    if (target < 0) return -1;
+    var path = [];
+    for (var p = target; p !== head; p = prev[p]) path.push(p);
+    path.reverse();
+    // Walk a copy of the snake along the path.
+    var body = s.slice(), occ = new Uint8Array(g.occ), food = new Uint8Array(g.isFood);
+    for (var k = 0; k < path.length; k++) {
+      var n = path[k], grow = food[n] === 1;
+      if (!grow) occ[body.pop()] = 0;
+      if (occ[n]) return -1;
+      occ[n] = 1; body.unshift(n);
+      if (grow) food[n] = 0;
+    }
+    if (body.length < N && !this.escapable(body, occ)) return -1;
+    return this.dirTo(head, path[0]);
+  };
 
   function dist(a, b, N) { return (b - a + N) % N; }
 
@@ -302,6 +372,12 @@
 
   Autopilot.prototype.decide = function () {
     var g = this.g, N = g.N, head = g.snake[0];
+
+    if (g.snake.length < this.GREEDY_LEN && !this.greedyOff) {
+      var gd = this.greedy();
+      if (gd >= 0) { this.cycle = null; return gd; }   // fresh route picked when the dash phase ends
+      this.greedyOff = true;                    // first sign of risk: play it safe from here on
+    }
 
     if (!this.cycle || !this.aligned(this.cycle)) {
       // Merging in (just switched on, or a new game).

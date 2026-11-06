@@ -25,6 +25,9 @@ One extra column fixes it and still fits the Kode Dot screen at 25 px per cell.
 
 ## How the autopilot wins
 
+0. **First 25 apples: straight for the nearest one** (shortest path), like a person would. Before each dash it
+   checks it could still catch its own tail afterwards; at the first sign of risk it switches to the safe route
+   for the rest of the game. ~295 moves for the first 25 apples instead of ~640.
 1. Every game it builds a **new random loop** through all 272 cells (random maze → wall-follow → stitch the 17th row).
 2. Following that loop alone can't fail, but looks robotic. So while the board is roomy it **cuts corners toward the food**,
    only taking shortcuts that keep the body in loop order. That keeps the guarantee and makes it look like a good player.
