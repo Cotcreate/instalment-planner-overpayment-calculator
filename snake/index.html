@@ -192,7 +192,7 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
     if (game.status === 'dead' || game.status === 'won') { newGame(); game.status = 'playing'; return true; }
     return false;
   }
-  function newGame() { game.reset(); pilot.reset(); acc = 0; playMs = 0; born = {}; }
+  function newGame() { game.reset(); pilot.reset(); setAuto(false); acc = 0; playMs = 0; born = {}; }   // every game starts manual
   function pause() { if (game.status === 'playing') game.status = 'paused'; else if (game.status === 'paused') game.status = 'playing'; }
   function steer(d) {
     if (auto) return;                        // auto is driving: arrows and swipes are for show only
