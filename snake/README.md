@@ -10,10 +10,10 @@ Open `index.html` through any static server (or the published link). Swipe on th
 - **Modes**: *Classic* (1 apple) or *Feast* (5 apples on screen at once, ~4× faster game). Switch with the Mode
   toggle, by tapping the pill on the start/game-over card (works on the Kode Dot touchscreen), or `M` on a keyboard.
   Best score is kept per mode.
-- **Autopilot**: Test bench switch, or the secret ones: **tap GO (OK) 3× fast**, or triple-tap the score
-  (keyboard: `Space` ×3 or `K K K`). A single GO tap still starts/pauses; a triple-tap never shows "Paused".
-  While it drives, every button, swipe and key is ignored (buttons still animate) except a fast GO triple-tap,
-  so you can tap along for show without pausing or turning the snake.
+- **Autopilot**: secret switch is **Up, Up, Up** within ~0.9 s: Up arrow button, swipe up, or the Up/W key.
+  Same again turns it off. Any other direction breaks the sequence, one long swipe counts once, and holding
+  the key doesn't count. While it drives, every other button, swipe and key is ignored (buttons still animate),
+  so you can tap along for show.
 - Every new game starts with autopilot **off**; switch it on each game.
 - Turn it on early. Takeover is tested at 100% for snakes under ~100 long; past that it usually works but isn't guaranteed.
 - A full clear is ~10,000 moves in Classic (~20 min) and ~2,500 in Feast (~6 min). Test bench has 2×/4×/16× for testing.
@@ -58,5 +58,5 @@ The engine is done. When the device arrives, the sketch only needs:
 
 1. **Draw**: same layout as `index.html` → HUD in the top 58 px, board at x=5, y=66, 25 px cells, sand checkerboard in a clay frame. Redraw only cells that changed each tick (head, neck, old tail, apples).
 2. **Input**: swipes on the touchscreen → `game.turn(dir)`.
-3. **The combo**: 3 presses of the OK button within ~450 ms → `autoOn = !autoOn`. A lone press waits 450 ms before pausing, so the triple never flashes "Paused" (see `okPress()` in `index.html`). While auto is on, ignore every other input.
+3. **The combo**: 3 presses of Up within ~900 ms → `autoOn = !autoOn` (any other direction resets the count). While auto is on, ignore every other input. See `steer()` in `index.html`.
 4. **Tick**: `game.step(autoOn ? pilot.decide(game) : -1)` every 190 ms, dropping to 110 ms as the snake grows (same curve as `interval()` in `index.html`).

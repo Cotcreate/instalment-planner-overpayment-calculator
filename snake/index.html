@@ -118,7 +118,7 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
     </div>
     <div class="bench-body" id="benchBody">
       <div class="row">
-        <label for="autoSw">Autopilot<small>Stand-in for the Kode Dot button combo</small></label>
+        <label for="autoSw">Autopilot<small>Secret switch: Up Up Up</small></label>
         <span class="switch"><input type="checkbox" id="autoSw" role="switch"><span></span></span>
       </div>
       <div class="row">
@@ -135,7 +135,7 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
         <span class="lbl">Board<small>16 × 17 · 272 cells</small></span>
         <button class="btn" id="newGame">New game</button>
       </div>
-      <p class="hint">Secret switch: <b>tap GO 3× fast</b> or <b>triple-tap the score</b> (keyboard: <b>Space ×3</b> or <b>K K K</b>). While auto drives, every button, swipe and key is ignored except a fast triple-tap on GO, so tap along and look busy.</p>
+      <p class="hint">Secret switch: <b>Up, Up, Up</b> fast (arrow button, swipe or key) to turn autopilot on, and again to turn it off. While auto drives, every other button, swipe and key is ignored, so tap along and look busy.</p>
     </div>
   </section>
 </main>
@@ -194,9 +194,19 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
   }
   function newGame() { game.reset(); pilot.reset(); setAuto(false); acc = 0; playMs = 0; born = {}; }   // every game starts manual
   function pause() { if (game.status === 'playing') game.status = 'paused'; else if (game.status === 'paused') game.status = 'playing'; }
+  /* Secret switch: UP UP UP within ~0.9 s toggles autopilot (D-pad, swipe or key).
+     Any other direction breaks the sequence. */
+  var upTimes = [], UP_WINDOW = 900;
   function steer(d) {
+    if (game.status === 'dead' || game.status === 'won') return;
+    if (d === 0) {
+      var now = performance.now();
+      upTimes = upTimes.filter(function (t) { return now - t < UP_WINDOW; });
+      upTimes.push(now);
+      if (upTimes.length >= 3) { upTimes = []; setAuto(!auto); return; }
+    } else upTimes = [];
     if (auto) return;                        // auto is driving: arrows and swipes are for show only
-    if (game.status !== 'playing') { if (game.status === 'ready' || game.status === 'paused') start(); else return; }
+    if (game.status !== 'playing') start();  // ready or paused
     game.turn(d);
   }
   function setAuto(on) {
@@ -212,53 +222,40 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
     [].forEach.call(modeSeg.children, function (b) { b.setAttribute('aria-pressed', String(+b.dataset.m === n)); });
   }
 
-  /* ---------- OK button: 1 tap = start/pause, 3 fast taps = autopilot ----------
-     During play the pause waits a beat, so a triple-tap never flashes "Paused". */
-  var okTaps = 0, okTimer = null, OK_WINDOW = 450;
+  /* ---------- OK / GO button: start, or pause (ignored while auto drives) ---------- */
   function okPress() {
-    okTaps++;
-    clearTimeout(okTimer);
-    if (okTaps >= 3) { okTaps = 0; setAuto(!auto); return; }
-    if (okTaps === 1 && start()) { okTimer = setTimeout(function () { okTaps = 0; }, OK_WINDOW); return; }
-    okTimer = setTimeout(function () {
-      if (okTaps === 1 && !auto) pause();      // a lone tap mid-game pauses; never while auto drives
-      okTaps = 0;
-    }, OK_WINDOW);
+    if (start()) return;
+    if (!auto) pause();
   }
 
   /* ---------- keyboard ---------- */
   var KEYS = { ArrowUp: 0, KeyW: 0, ArrowRight: 1, KeyD: 1, ArrowDown: 2, KeyS: 2, ArrowLeft: 3, KeyA: 3 };
-  var kTimes = [];
   window.addEventListener('keydown', function (e) {
     if (e.target && /INPUT|BUTTON/.test(e.target.tagName) && e.code === 'Space') return;
-    if (e.code in KEYS) { e.preventDefault(); steer(KEYS[e.code]); return; }
+    if (e.code in KEYS) { e.preventDefault(); if (!e.repeat) steer(KEYS[e.code]); return; }   // holding a key isn't 3 presses
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) okPress(); return; }
     var autoLive = auto && game.status === 'playing';
     if (e.code === 'Enter') { if (!autoLive) newGame(); return; }
     if (e.code === 'KeyM') { if (!autoLive) setMode(apples === 5 ? 1 : 5); return; }
-    if (e.code === 'KeyK') {
-      var now = performance.now();
-      kTimes = kTimes.filter(function (t) { return now - t < 1200; });
-      kTimes.push(now);
-      if (kTimes.length >= 3) { kTimes = []; setAuto(!auto); }
-    }
   });
 
   /* ---------- touch: swipe anywhere on the screen ---------- */
   var screen = document.getElementById('screen');
-  var t0 = null, moved = false, taps = [];
+  var t0 = null, moved = false;
   function toLogical(touch) {
     var r = screen.getBoundingClientRect();
     return { x: (touch.clientX - r.left) * SW / r.width, y: (touch.clientY - r.top) * SH / r.height, cx: touch.clientX, cy: touch.clientY };
   }
-  screen.addEventListener('touchstart', function (e) { e.preventDefault(); t0 = toLogical(e.touches[0]); moved = false; }, { passive: false });
+  var swipeDir = -1;                         // one swipe counts once, however long it is
+  screen.addEventListener('touchstart', function (e) { e.preventDefault(); t0 = toLogical(e.touches[0]); moved = false; swipeDir = -1; }, { passive: false });
   screen.addEventListener('touchmove', function (e) {
     e.preventDefault();
     if (!t0) return;
     var p = toLogical(e.touches[0]), dx = p.cx - t0.cx, dy = p.cy - t0.cy;
     if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return;
-    steer(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0));
-    t0 = p; moved = true;                     // chain swipes without lifting
+    var sd = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+    if (sd !== swipeDir) { steer(sd); swipeDir = sd; }
+    t0 = p; moved = true;                     // chain turns without lifting
   }, { passive: false });
   screen.addEventListener('touchend', function (e) {
     e.preventDefault();
@@ -272,14 +269,6 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
 
   var pill = null;                           // mode pill on the banner, tappable (works on the Kode Dot too)
   function tap(x, y) {
-    if (y < HUD && x < 160) {                 // score area: secret triple-tap (switches on; only GO switches off)
-      if (auto) return;
-      var now = performance.now();
-      taps = taps.filter(function (t) { return now - t < 900; });
-      taps.push(now);
-      if (taps.length >= 3) { taps = []; setAuto(!auto); }
-      return;
-    }
     if (pill && game.status !== 'playing' && x > pill.x && x < pill.x + pill.w && y > pill.y && y < pill.y + pill.h) {
       setMode(apples === 5 ? 1 : 5); return;
     }
