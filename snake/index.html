@@ -135,7 +135,7 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
         <span class="lbl">Board<small>16 × 17 · 272 cells</small></span>
         <button class="btn" id="newGame">New game</button>
       </div>
-      <p class="hint">Secret switch: <b>tap GO 3× fast</b> or <b>triple-tap the score</b> (keyboard: <b>Space ×3</b> or <b>K K K</b>). While auto drives, your swipes are ignored, so swipe away and look busy.</p>
+      <p class="hint">Secret switch: <b>tap GO 3× fast</b> or <b>triple-tap the score</b> (keyboard: <b>Space ×3</b> or <b>K K K</b>). While auto drives, every button, swipe and key is ignored except a fast triple-tap on GO, so tap along and look busy.</p>
     </div>
   </section>
 </main>
@@ -195,8 +195,8 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
   function newGame() { game.reset(); pilot.reset(); acc = 0; playMs = 0; born = {}; }
   function pause() { if (game.status === 'playing') game.status = 'paused'; else if (game.status === 'paused') game.status = 'playing'; }
   function steer(d) {
+    if (auto) return;                        // auto is driving: arrows and swipes are for show only
     if (game.status !== 'playing') { if (game.status === 'ready' || game.status === 'paused') start(); else return; }
-    if (auto) return;                        // auto is driving: let them swipe for show
     game.turn(d);
   }
   function setAuto(on) {
@@ -221,7 +221,7 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
     if (okTaps >= 3) { okTaps = 0; setAuto(!auto); return; }
     if (okTaps === 1 && start()) { okTimer = setTimeout(function () { okTaps = 0; }, OK_WINDOW); return; }
     okTimer = setTimeout(function () {
-      if (okTaps === 1) pause();               // a lone tap mid-game pauses
+      if (okTaps === 1 && !auto) pause();      // a lone tap mid-game pauses; never while auto drives
       okTaps = 0;
     }, OK_WINDOW);
   }
@@ -233,8 +233,9 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
     if (e.target && /INPUT|BUTTON/.test(e.target.tagName) && e.code === 'Space') return;
     if (e.code in KEYS) { e.preventDefault(); steer(KEYS[e.code]); return; }
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) okPress(); return; }
-    if (e.code === 'Enter') { newGame(); return; }
-    if (e.code === 'KeyM') { setMode(apples === 5 ? 1 : 5); return; }
+    var autoLive = auto && game.status === 'playing';
+    if (e.code === 'Enter') { if (!autoLive) newGame(); return; }
+    if (e.code === 'KeyM') { if (!autoLive) setMode(apples === 5 ? 1 : 5); return; }
     if (e.code === 'KeyK') {
       var now = performance.now();
       kTimes = kTimes.filter(function (t) { return now - t < 1200; });
@@ -271,7 +272,8 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
 
   var pill = null;                           // mode pill on the banner, tappable (works on the Kode Dot too)
   function tap(x, y) {
-    if (y < HUD && x < 160) {                 // score area: secret triple-tap
+    if (y < HUD && x < 160) {                 // score area: secret triple-tap (switches on; only GO switches off)
+      if (auto) return;
       var now = performance.now();
       taps = taps.filter(function (t) { return now - t < 900; });
       taps.push(now);
