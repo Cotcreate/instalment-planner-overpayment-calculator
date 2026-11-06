@@ -182,7 +182,7 @@ main { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direct
 
   /* ---------- timing ---------- */
   function interval() {
-    var base = Math.max(72, 140 - (game.snake.length - 3) * 0.6);
+    var base = Math.max(110, 190 - (game.snake.length - 3) * 0.4);   // ms per move: ~5/s at start, ~9/s at most
     return auto ? base / speed : base;
   }
 

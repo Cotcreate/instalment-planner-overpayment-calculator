@@ -13,7 +13,7 @@ Open `index.html` through any static server (or the published link). Swipe on th
 - **Autopilot**: Test bench switch, or the secret one: **triple-tap the score** (keyboard: `K K K`).
   While it drives, your swipes are ignored, so you can keep swiping for show.
 - Turn it on early. Takeover is tested at 100% for snakes under ~100 long; past that it usually works but isn't guaranteed.
-- A full clear is ~10,000 moves in Classic (~15 min) and ~2,500 in Feast (~4 min). Test bench has 2×/4×/16× for testing.
+- A full clear is ~10,000 moves in Classic (~20 min) and ~2,500 in Feast (~6 min). Test bench has 2×/4×/16× for testing.
 
 ## Why 16 × 17, not 15 × 17
 
@@ -53,4 +53,4 @@ The engine is done. When the device arrives, the sketch only needs:
 1. **Draw**: same layout as `index.html` → HUD in the top 58 px, board at x=5, y=66, 25 px cells, sand checkerboard in a clay frame. Redraw only cells that changed each tick (head, neck, old tail, apples).
 2. **Input**: swipes on the touchscreen → `game.turn(dir)`.
 3. **The combo**: map a button combination (e.g. both buttons held 1 s) to `autoOn = !autoOn`. Swap in whatever the Kode Dot's buttons turn out to be.
-4. **Tick**: `game.step(autoOn ? pilot.decide(game) : -1)` every 140 ms, dropping to 72 ms as the snake grows (same curve as `interval()` in `index.html`).
+4. **Tick**: `game.step(autoOn ? pilot.decide(game) : -1)` every 190 ms, dropping to 110 ms as the snake grows (same curve as `interval()` in `index.html`).
