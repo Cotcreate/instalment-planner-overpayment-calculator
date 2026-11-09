@@ -8,6 +8,8 @@
  *  - Hold a player's block     -> -1 for that player (never below 0)
  *  - PLAYERS pill              -> add, rename or remove players
  *
+ * Player screen: tap a player to change their nickname or colour (8 swatches)
+ *
  * Physical buttons (scoreboard)
  *  - Top button                -> +1 for the selected player (mash it)
  *  - D-pad LEFT / RIGHT        -> select the previous / next player
@@ -73,18 +75,19 @@ static const uint32_t PAPER = 0xFFFDF8;
 
 struct Block { uint32_t bg; bool darkText; };
 static const Block BLOCKS[] = {
+    // One per step round the colour wheel, matched in strength, so any mix of players works
     {0xFF5436, true },  // tomato
     {0xFFC22E, true },  // sunflower
-    {0x19C98A, true },  // mint
-    {0x2F5BFF, false},  // cobalt
-    {0xFF6FB1, true },  // pink
-    {0xFF9A1F, true },  // tangerine
-    {0x00A6A6, false},  // teal
     {0xB6E62E, true },  // lime
+    {0x19C98A, true },  // mint
+    {0x38B6FF, true },  // sky
+    {0x2F5BFF, false},  // cobalt
+    {0x8B5CF6, false},  // violet
+    {0xFF6FB1, true },  // pink
 };
 static const uint8_t BLOCK_COUNT = sizeof(BLOCKS) / sizeof(BLOCKS[0]);
 // Order new players pick colours in, so neighbours always contrast
-static const uint8_t COLOUR_ORDER[] = {0, 3, 1, 6, 4, 2, 5, 7};
+static const uint8_t COLOUR_ORDER[] = {0, 5, 1, 3, 7, 6, 2, 4};
 
 static lv_color_t bgOf(uint8_t c) { return lv_color_hex(BLOCKS[c % BLOCK_COUNT].bg); }
 static lv_color_t fgOf(uint8_t c) { return lv_color_hex(BLOCKS[c % BLOCK_COUNT].darkText ? INK : PAPER); }
@@ -197,6 +200,7 @@ static lv_obj_t *playersLayer = nullptr;
 static lv_obj_t *editLayer = nullptr;
 static lv_obj_t *slot[NAME_LEN], *lblSlot[NAME_LEN];
 static lv_obj_t *slotRow = nullptr;
+static lv_obj_t *swatch[BLOCK_COUNT];
 
 // On lv_layer_top(), above every screen
 static lv_obj_t *toast, *lblToast, *btnUndo;
@@ -906,9 +910,20 @@ static void openPlayers() {
 // -----------------------------------------------------------------------------
 // Name editor: three letter slots + an A-Z keyboard
 // -----------------------------------------------------------------------------
+static bool colourTaken(uint8_t c) {
+    for (uint8_t i = 0; i < game.n; i++)
+        if ((int8_t)i != editIndex && game.p[i].colour == c) return true;
+    return false;
+}
+
 static void refreshSlots() {
     if (!editLayer) return;
     lv_color_t paper = lv_color_hex(PAPER);
+    for (uint8_t c = 0; c < BLOCK_COUNT; c++) {
+        bool chosen = c == editColour;
+        lv_obj_set_style_bg_opa(swatch[c], colourTaken(c) ? LV_OPA_30 : LV_OPA_COVER, 0);
+        lv_obj_set_style_outline_width(swatch[c], chosen ? 3 : 0, 0);
+    }
     for (uint8_t k = 0; k < NAME_LEN; k++) {
         bool filled = k < editLen;
         bool active = k == editLen;
@@ -944,10 +959,11 @@ static void edit_done_cb(lv_event_t *e) {
                 rebuildBoard();
                 scheduleSave();
             }
-        } else if (strcmp(game.p[editIndex].name, editBuf) != 0) {
+        } else if (strcmp(game.p[editIndex].name, editBuf) != 0 || game.p[editIndex].colour != editColour) {
             pushHistory();
             memset(game.p[editIndex].name, 0, sizeof(game.p[editIndex].name));
             strncpy(game.p[editIndex].name, editBuf, NAME_LEN);
+            game.p[editIndex].colour = editColour;
             rebuildBoard();
             scheduleSave();
         }
@@ -968,6 +984,15 @@ static void key_cb(lv_event_t *e) {
         bounce(slot[editLen - 1], 12);
     }
     refreshSlots();
+}
+
+static void swatch_cb(lv_event_t *e) {
+    if (busy()) return;
+    uint8_t c = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
+    if (colourTaken(c)) { nope((lv_obj_t *)lv_event_get_target(e)); return; }
+    editColour = c;
+    refreshSlots();
+    bounce((lv_obj_t *)lv_event_get_target(e), -8);
 }
 
 static void suggest_cb(lv_event_t *e) {
@@ -1009,14 +1034,33 @@ static void openEditor(int8_t i) {
     lv_obj_set_size(slotRow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(slotRow, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(slotRow, 14, 0);
-    lv_obj_align(slotRow, LV_ALIGN_TOP_MID, 0, 86);
+    lv_obj_align(slotRow, LV_ALIGN_TOP_MID, 0, 80);
     for (uint8_t k = 0; k < NAME_LEN; k++) {
         slot[k] = plainObj(slotRow);
-        lv_obj_set_size(slot[k], 96, 106);
+        lv_obj_set_size(slot[k], 96, 86);
         lv_obj_set_style_radius(slot[k], 16, 0);
         lv_obj_set_style_border_width(slot[k], 3, 0);
         lblSlot[k] = makeLabel(slot[k], &Points_84, 0, "");
         lv_obj_align(lblSlot[k], LV_ALIGN_CENTER, 0, Points_84.base_line / 2);
+    }
+
+    // Colour swatches: the 8 block colours. Ones other players have are dimmed.
+    lv_obj_t *sw = plainObj(editLayer);
+    lv_obj_set_size(sw, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(sw, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(sw, 12, 0);
+    lv_obj_set_style_pad_all(sw, 6, 0);       // room for the selection ring
+    lv_obj_align(sw, LV_ALIGN_TOP_MID, 0, 170);
+    for (uint8_t c = 0; c < BLOCK_COUNT; c++) {
+        swatch[c] = plainObj(sw);
+        lv_obj_add_flag(swatch[c], LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_size(swatch[c], 34, 34);
+        lv_obj_set_style_radius(swatch[c], 10, 0);
+        lv_obj_set_style_bg_color(swatch[c], bgOf(c), 0);
+        lv_obj_set_style_outline_color(swatch[c], paper, 0);
+        lv_obj_set_style_outline_pad(swatch[c], 3, 0);
+        lv_obj_set_ext_click_area(swatch[c], 5);
+        lv_obj_add_event_cb(swatch[c], swatch_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)c);
     }
 
     // Middle row: remove (existing player) or quick picks (new player)
@@ -1025,7 +1069,7 @@ static void openEditor(int8_t i) {
     lv_obj_set_flex_flow(mid, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(mid, 12, 0);
-    lv_obj_align(mid, LV_ALIGN_TOP_MID, 0, 202);
+    lv_obj_align(mid, LV_ALIGN_TOP_MID, 0, 218);
     if (i >= 0) {
         if (game.n > 1) {
             lv_obj_t *rm = makePill(mid, "HOLD TO REMOVE", paper);
@@ -1043,9 +1087,9 @@ static void openEditor(int8_t i) {
     }
 
     // Keyboard: A-Z + DEL, 7 x 4
-    const int32_t keyW = 48, keyH = 50, gap = 6, cols = 7;
+    const int32_t keyW = 48, keyH = 46, gap = 6, cols = 7;
     const int32_t kbW = cols * keyW + (cols - 1) * gap;
-    const int32_t kbX = (LCD_WIDTH - kbW) / 2, kbY = 262;
+    const int32_t kbX = (LCD_WIDTH - kbW) / 2, kbY = 274;
     for (int k = 0; k < 27; k++) {
         lv_obj_t *key = plainObj(editLayer);
         lv_obj_add_flag(key, LV_OBJ_FLAG_CLICKABLE);

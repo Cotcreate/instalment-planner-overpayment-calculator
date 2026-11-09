@@ -10,12 +10,13 @@ Each player gets their own colour block with a 3-letter nickname. Tap a player's
 - **PLAYERS** (top right) opens the player list.
 
 **Player list**
-- **Tap a player** to change their nickname or remove them.
+- **Tap a player** to change their nickname or colour, or to remove them.
 - **+ ADD PLAYER** adds a new player, up to 6. If PET or JES isn't in the game, they show as one-tap picks.
 - **Hold "HOLD TO RESET SCORES"** for 3 s to set every score to 0. Players stay.
 
 **Nickname screen**
 - Type up to 3 letters on the A–Z keyboard. **DEL** removes the last letter. **DONE** saves.
+- Tap one of the **8 colour swatches** to pick the player's colour. A colour another player has is dimmed, so no two players share one.
 - **Hold "HOLD TO REMOVE"** for 3 s to remove that player. This option is hidden when only one player is left.
 
 **Buttons**
@@ -93,8 +94,8 @@ Settings live at the top of `src/main.cpp`:
 | `MAX_PLAYERS` | 6 | Most players in a game |
 | `DEFAULT_NAMES` | PET, JES | Players on first boot, and the quick picks when adding |
 | `LED_BRIGHTNESS` | 40 | RGB LED brightness (0–255) |
-| `BLOCKS[]` | 8 colours | The colour palette |
-| `COLOUR_ORDER[]` | 0,3,1,6,… | The order new players take colours in, so neighbours contrast |
+| `BLOCKS[]` | 8 colours | The palette: tomato, sunflower, lime, mint, sky, cobalt, violet, pink. One per step round the colour wheel, so any mix of players works |
+| `COLOUR_ORDER[]` | 0,5,1,3,… | The colour a new player starts with, in order, so neighbours contrast |
 
 ## Status
 
