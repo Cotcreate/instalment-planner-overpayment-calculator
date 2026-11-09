@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+<title>Tally Block</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: one full-bleed colour block per number; a new colour floods out from the tap point. */
+:root {
+  color-scheme: light;
+  --ink: #15120F;
+  --paper: #FFFDF8;
+  --tomato: #FF5436;
+  --sun: #FFC22E;
+  --mint: #19C98A;
+  --cobalt: #2F5BFF;
+  --pink: #FF6FB1;
+  --tangerine: #FF9A1F;
+  --teal: #00A6A6;
+  --lime: #B6E62E;
+  --display: "Bricolage Grotesque", "Arial Black", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --fg: var(--ink);
+}
+html, body { height: 100%; }
+body {
+  background: var(--tomato);
+  color: var(--fg);
+  font-family: var(--mono);
+  overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#stage {
+  position: fixed; inset: 0;
+  touch-action: manipulation;
+  cursor: pointer;
+  background: var(--block, var(--tomato));
+  color: var(--fg);
+  transition: color .25s ease;
+}
+#flood { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.wave {
+  position: absolute; border-radius: 50%;
+  width: 20px; height: 20px; margin: -10px 0 0 -10px;
+  transform: scale(0);
+  animation: flood .55s cubic-bezier(.2,.7,.2,1) forwards;
+}
+@keyframes flood { to { transform: scale(var(--s, 200)); } }
+
+.ui {
+  position: absolute; inset: 0;
+  display: grid; grid-template-rows: auto 1fr auto;
+  padding-top: max(18px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(18px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  pointer-events: none;
+}
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { font-weight: 700; font-size: 13px; letter-spacing: .18em; text-transform: uppercase; }
+.brand span { opacity: .55; font-weight: 500; }
+
+#reset {
+  pointer-events: auto;
+  position: relative; overflow: hidden;
+  font: 700 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--fg); background: transparent;
+  border: 2px solid currentColor; border-radius: 999px;
+  padding: 11px 16px 11px 14px;
+  display: inline-flex; align-items: center; gap: 8px;
+  cursor: pointer; touch-action: none;
+}
+#reset:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+#reset .fill {
+  position: absolute; inset: 0; background: currentColor;
+  transform: scaleX(0); transform-origin: left;
+}
+#reset.holding .fill { transform: scaleX(1); transition: transform var(--hold, 1200ms) linear; }
+#reset .lbl, #reset svg { position: relative; mix-blend-mode: difference; }
+#reset svg { width: 14px; height: 14px; }
+
+main { display: grid; place-items: center; min-height: 0; }
+#num {
+  font-family: var(--display); font-weight: 800;
+  font-variation-settings: "opsz" 96;
+  font-size: clamp(120px, 48vmin, 520px);
+  line-height: .85; letter-spacing: -.05em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+#num.bump { animation: bump .28s cubic-bezier(.3,1.6,.5,1); }
+#num.drop { animation: drop .28s cubic-bezier(.3,1.6,.5,1); }
+#num.nope { animation: nope .35s ease; }
+@keyframes bump { 0% { transform: scale(.86) translateY(4%); } 100% { transform: none; } }
+@keyframes drop { 0% { transform: scale(1.12) translateY(-4%); } 100% { transform: none; } }
+@keyframes nope { 20%,60% { transform: translateX(-4%); } 40%,80% { transform: translateX(4%); } }
+
+footer { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.chip {
+  font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  padding: 8px 12px; border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.chip b { font-weight: 700; opacity: .6; margin-right: 6px; }
+
+#toast {
+  pointer-events: auto;
+  position: absolute; left: 50%; bottom: calc(max(18px, env(safe-area-inset-bottom, 0px)) + 52px);
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px;
+  background: var(--ink); color: var(--paper);
+  padding: 10px 10px 10px 16px; border-radius: 14px;
+  font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+#toast button {
+  font: 700 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  background: var(--paper); color: var(--ink); border: 0; border-radius: 9px;
+  padding: 9px 12px; cursor: pointer;
+}
+#toast button:focus-visible { outline: 2px solid var(--sun); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wave { animation-duration: 1ms; }
+  #num.bump, #num.drop, #num.nope { animation: none; }
+  #reset.holding .fill { transition-duration: 1ms; }
+}
+</style>
+
+<div id="stage" aria-label="Counter. Tap to add one, double-tap to subtract one." role="button" tabindex="0">
+  <div id="flood"></div>
+  <div class="ui">
+    <header>
+      <div class="brand">Tally <span>/ block</span></div>
+      <button id="reset" type="button" aria-label="Hold to reset the count to zero">
+        <span class="fill"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+        <span class="lbl">Hold to reset</span>
+      </button>
+    </header>
+    <main><div id="num" aria-live="polite">0</div></main>
+    <footer>
+      <span class="chip"><b>Tap</b>+1</span>
+      <span class="chip"><b>Double-tap</b>−1</span>
+    </footer>
+  </div>
+  <div id="toast" hidden><span id="toastMsg">Reset from 0</span><button id="undo" type="button">Undo</button></div>
+</div>
+
+<script>
+(() => {
+  const BLOCKS = [
+    ["--tomato", "ink"], ["--sun", "ink"], ["--mint", "ink"], ["--cobalt", "paper"],
+    ["--pink", "ink"], ["--tangerine", "ink"], ["--teal", "paper"], ["--lime", "ink"]
+  ];
+  const DOUBLE_MS = 260, HOLD_MS = 1200, KEY = "tally-block-count";
+  const css = getComputedStyle(document.documentElement);
+  const color = v => css.getPropertyValue(v).trim();
+
+  const stage = document.getElementById("stage");
+  const flood = document.getElementById("flood");
+  const num = document.getElementById("num");
+  const resetBtn = document.getElementById("reset");
+  const toast = document.getElementById("toast");
+  const toastMsg = document.getElementById("toastMsg");
+  const undoBtn = document.getElementById("undo");
+
+  let count = 0;
+  try { count = Math.max(0, parseInt(localStorage.getItem(KEY), 10) || 0); } catch (e) {}
+
+  const blockFor = n => BLOCKS[((n % BLOCKS.length) + BLOCKS.length) % BLOCKS.length];
+
+  function paint(n) {
+    const [bg, fg] = blockFor(n);
+    stage.style.setProperty("--block", color(bg));
+    stage.style.setProperty("--fg", color(fg === "ink" ? "--ink" : "--paper"));
+    document.body.style.background = color(bg);
+  }
+
+  function save() { try { localStorage.setItem(KEY, String(count)); } catch (e) {} }
+
+  function animate(cls) {
+    num.classList.remove("bump", "drop", "nope");
+    void num.offsetWidth;
+    num.classList.add(cls);
+  }
+
+  function buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} }
+
+  function wave(x, y, n) {
+    const [bg] = blockFor(n);
+    const w = document.createElement("div");
+    w.className = "wave";
+    w.style.left = x + "px"; w.style.top = y + "px";
+    w.style.background = color(bg);
+    const far = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    w.style.setProperty("--s", Math.ceil(far / 10) + 1);
+    flood.appendChild(w);
+    w.addEventListener("animationend", () => { paint(n); w.remove(); }, { once: true });
+    setTimeout(() => { if (w.isConnected) { paint(n); w.remove(); } }, 900);
+  }
+
+  function setCount(n, x, y, cls) {
+    count = n;
+    num.textContent = count;
+    save();
+    animate(cls);
+    if (x == null) { paint(count); } else { wave(x, y, count); }
+  }
+
+  // Tap / double-tap
+  let pending = null, lastUp = 0, px = 0, py = 0;
+  function tap(x, y) {
+    const now = performance.now();
+    if (pending && now - lastUp < DOUBLE_MS) {
+      clearTimeout(pending); pending = null; lastUp = 0;
+      if (count === 0) { animate("nope"); buzz([30, 40, 30]); return; }
+      buzz(25);
+      setCount(count - 1, x, y, "drop");
+      return;
+    }
+    lastUp = now; px = x; py = y;
+    pending = setTimeout(() => {
+      pending = null;
+      buzz(10);
+      setCount(count + 1, px, py, "bump");
+    }, DOUBLE_MS);
+  }
+
+  stage.addEventListener("pointerup", e => {
+    if (e.target.closest("#reset, #toast")) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    tap(e.clientX, e.clientY);
+  });
+  stage.addEventListener("dblclick", e => e.preventDefault());
+  stage.addEventListener("keydown", e => {
+    if (e.target !== stage) return;
+    const r = stage.getBoundingClientRect();
+    if (e.key === " " || e.key === "Enter" || e.key === "ArrowUp" || e.key === "+") {
+      e.preventDefault(); setCount(count + 1, r.width / 2, r.height / 2, "bump");
+    } else if (e.key === "ArrowDown" || e.key === "-" || e.key === "Backspace") {
+      e.preventDefault();
+      if (count === 0) animate("nope"); else setCount(count - 1, r.width / 2, r.height / 2, "drop");
+    }
+  });
+
+  // Hold-to-reset, with undo
+  let holdTimer = null, toastTimer = null, before = 0;
+  resetBtn.style.setProperty("--hold", HOLD_MS + "ms");
+
+  function startHold(e) {
+    e.preventDefault();
+    if (count === 0) { animate("nope"); return; }
+    resetBtn.classList.add("holding");
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      resetBtn.classList.remove("holding");
+      before = count;
+      buzz([20, 60, 60]);
+      const r = resetBtn.getBoundingClientRect();
+      setCount(0, r.left + r.width / 2, r.top + r.height / 2, "drop");
+      showToast("Reset from " + before);
+    }, HOLD_MS);
+  }
+  function cancelHold() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    resetBtn.classList.remove("holding");
+  }
+  resetBtn.addEventListener("pointerdown", startHold);
+  ["pointerup", "pointerleave", "pointercancel"].forEach(t => resetBtn.addEventListener(t, cancelHold));
+  resetBtn.addEventListener("keydown", e => { if ((e.key === " " || e.key === "Enter") && !e.repeat && !holdTimer) startHold(e); });
+  resetBtn.addEventListener("keyup", e => { if (e.key === " " || e.key === "Enter") cancelHold(); });
+  resetBtn.addEventListener("contextmenu", e => e.preventDefault());
+
+  function showToast(msg) {
+    toastMsg.textContent = msg;
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
+  }
+  undoBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    toast.hidden = true; clearTimeout(toastTimer);
+    const r = undoBtn.getBoundingClientRect();
+    setCount(before, r.left + r.width / 2, r.top + r.height / 2, "bump");
+  });
+
+  num.textContent = count;
+  paint(count);
+})();
+</script>
+</html>
