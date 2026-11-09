@@ -36,7 +36,17 @@ The panel is lit the whole time the app runs, so the UI is built to protect it:
   full brightness. Brightness is set on the panel directly and is **not** written
   to NVS, so this never disturbs your saved kodeOS brightness.
 - **Anti burn-in drift**: the whole layout nudges a few pixels every ~90 s so no
-  element sits on fixed pixels.
+  element sits on fixed pixels. While dimmed it wanders slowly around the screen
+  instead (screensaver).
+
+## What moves on screen
+
+- A comet rides the countdown ring as the interval elapses.
+- A ripple expands from the ring each time a cycle completes.
+- The ring glow breathes while running.
+- A strip of 12 dots shows recent cycles, coloured by mode (Timed mode shows its
+  interval and distance steppers there instead).
+- The info line shows active time and cycle count.
 
 ## Project layout
 

@@ -12,8 +12,10 @@
 // Screen care (the panel is on the whole time this app runs):
 //   - true-black background so most AMOLED pixels stay off
 //   - auto-dims toward black after ~20 s without touch, full brightness on touch
-//   - the whole layout drifts a few pixels every ~90 s to avoid burn-in
+//   - the whole layout drifts a few pixels every ~90 s to avoid burn-in, and
+//     wanders slowly around the screen while dimmed (screensaver)
 #include <Arduino.h>
+#include <math.h>
 
 #include "board.h"
 #include "controller.h"
@@ -69,7 +71,23 @@ void applyDimming(uint32_t now) {
   board::setBacklight(level);
 }
 
+// Awake: step to a new offset every ~90 s. Dimmed: wander slowly in a smooth
+// loop (screensaver), so no pixel stays lit while the app sits idle.
 void applyShift(uint32_t now) {
+  static bool wasDimmed = false;
+  const bool dimmed = (now - lastActivity) >= DIM_AFTER_MS;
+
+  if (dimmed) {
+    const float t = now / 1000.0f;
+    ui::setShift((int8_t)lroundf(7.0f * sinf(t / 4.8f)),
+                 (int8_t)lroundf(7.0f * sinf(t / 3.1f + 1.0f)));
+    wasDimmed = true;
+    return;
+  }
+  if (wasDimmed) {   // woke up: return to the current stepped offset
+    wasDimmed = false;
+    ui::setShift(SHIFTS[shiftIdx][0], SHIFTS[shiftIdx][1]);
+  }
   if (now - lastShift < SHIFT_EVERY_MS) return;
   lastShift = now;
   shiftIdx = (shiftIdx + 1) % N_SHIFTS;
