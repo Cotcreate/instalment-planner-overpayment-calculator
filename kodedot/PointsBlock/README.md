@@ -31,7 +31,30 @@ Each player gets their own colour block with a 3-letter nickname. Tap a player's
 - Scores shrink to fit their block, so 3-digit scores still fit with 6 players.
 - Players and scores are saved to flash, so they survive turning the device off.
 
-## Install
+## Quick test (no build needed)
+
+A ready-built file is in `firmware/PointsBlock.bin`. You can flash it from Chrome or Edge with nothing installed:
+
+1. Plug the Kode Dot in over USB-C.
+2. Open the [Espressif web flasher](https://espressif.github.io/esptool-js/).
+3. Set the baud rate to 460800 and click **Connect**, then pick the Kode Dot's port.
+4. Under **Flash Address** enter `0x400000`. This step matters: the wrong address can overwrite kodeOS.
+5. Choose `PointsBlock.bin` and click **Program**.
+6. When it finishes, press reset or unplug and replug.
+
+If Connect can't find the device, hold the top button while plugging it in, then try again.
+
+Or, with Python installed:
+
+```bash
+pip install esptool
+```
+
+```bash
+esptool --chip esp32s3 --baud 460800 write-flash 0x400000 firmware/PointsBlock.bin
+```
+
+## Install from source
 
 You need [VS Code](https://code.visualstudio.com/) with the **PlatformIO** extension.
 
@@ -77,4 +100,4 @@ Settings live at the top of `src/main.cpp`:
 
 This compiles against LVGL 9.6 and the current pioarduino ESP32 core. It has not been tested on a device yet.
 
-Build note: Kode's `display_manager.cpp` calls the `Arduino_CO5300` screen driver with the argument list from GFX Library 1.6.0. Newer GFX releases (1.6.1 and later) dropped one argument, and GFX 1.6.0 doesn't compile on the newest ESP32 core. If the build fails inside `display_manager.cpp`, remove the `false,` after `LCD_RST, 0,` in `new Arduino_CO5300(...)` and change `BLACK` to `RGB565_BLACK`. That's the only change needed.
+Build note: `lib_deps` pins GFX Library 1.6.9 and LVGL 9.6.0 from GitHub, the versions this was built and checked with. Kode's `display_manager.cpp` has a two-word change for that GFX version: the `Arduino_CO5300` call drops a `false` argument, and `BLACK` becomes `RGB565_BLACK`. Nothing else in Kode's board package changed.

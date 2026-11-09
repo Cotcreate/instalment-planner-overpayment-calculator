@@ -76,7 +76,7 @@ bool DisplayManager::init() {
     );
     
     gfx = new Arduino_CO5300(
-        bus, LCD_RST, 0, false, LCD_WIDTH, LCD_HEIGHT,
+        bus, LCD_RST, 0, LCD_WIDTH, LCD_HEIGHT,
         22, 0, 0, 0
     );
 
@@ -109,7 +109,7 @@ bool DisplayManager::init() {
                      (unsigned)saved_pct, (unsigned)hardware_brightness);
     }
     
-    gfx->fillScreen(BLACK);
+    gfx->fillScreen(RGB565_BLACK);
     Serial.println("Panel initialized");
 
     // Initialize LVGL core
