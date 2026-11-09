@@ -1,0 +1,308 @@
+<title>Points Block</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&display=swap">
+<style>
+/* Layout: one device on a dark desk, the 410x502 screen scaled to fit, real buttons below */
+:root{
+  --desk:#1d1b19; --desk-fg:#d9d3c7; --desk-dim:#8d867a;
+  --shell:#0c0b0a; --shell-edge:#2c2925; --key:#2a2723; --key-on:#45403a;
+  --ink:#15120F; --paper:#FFFDF8;
+  --font:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--desk);color:var(--desk-fg);font-family:var(--font);margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px;
+  display:flex;flex-direction:column;align-items:center;gap:14px;overflow-x:hidden}
+.top{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
+.top h1{font-size:15px;letter-spacing:4px;margin:0;font-weight:800}
+.top p{margin:0;font-size:13px;color:var(--desk-dim);max-width:46ch}
+.device{background:var(--shell);border:2px solid var(--shell-edge);border-radius:44px;padding:18px 18px 22px;
+  display:flex;flex-direction:column;align-items:center;gap:18px;box-shadow:0 30px 60px -20px #000}
+.screenbox{position:relative;overflow:hidden;border-radius:26px;background:#000}
+#scr{position:absolute;left:0;top:0;width:410px;height:502px;transform-origin:0 0;overflow:hidden;
+  font-family:var(--font);user-select:none;-webkit-user-select:none;touch-action:none;background:#FF5436}
+.controls{display:flex;align-items:center;justify-content:space-between;width:100%;gap:16px;padding:0 6px}
+.btn{background:var(--key);color:var(--desk-fg);border:0;font:700 12px var(--font);letter-spacing:2px;border-radius:999px;
+  padding:12px 16px;cursor:pointer;touch-action:none}
+.btn:active,.btn.on{background:var(--key-on)}
+.btn:focus-visible,.pad button:focus-visible{outline:2px solid var(--desk-fg);outline-offset:2px}
+.pad{display:grid;grid-template-columns:repeat(3,40px);grid-template-rows:repeat(3,40px);gap:3px}
+.pad button{background:var(--key);border:0;color:var(--desk-fg);border-radius:10px;cursor:pointer;font-size:14px;touch-action:none}
+.pad button:active,.pad button.on{background:var(--key-on)}
+.pad .hub{background:transparent;pointer-events:none}
+.legend{font-size:12px;color:var(--desk-dim);text-align:center;max-width:52ch;line-height:1.6}
+.legend b{color:var(--desk-fg);font-weight:700}
+#led{width:10px;height:10px;border-radius:50%;background:#FF5436;box-shadow:0 0 12px #FF5436}
+.ledrow{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:2px;color:var(--desk-dim)}
+
+/* ---- inside the screen ---- */
+#scr *{box-sizing:border-box}
+[hidden]{display:none!important}
+.lbl{font-weight:700;font-size:22px;line-height:22px;text-transform:uppercase;white-space:nowrap}
+.brand{position:absolute;left:26px;top:34px;letter-spacing:4px}
+.pill{position:absolute;top:22px;right:20px;height:48px;border:3px solid currentColor;border-radius:999px;padding:0 22px;
+  display:flex;align-items:center;letter-spacing:1px;cursor:pointer;background:transparent}
+.flood{position:absolute;z-index:0}
+.area{position:absolute;left:20px;top:84px;width:370px;height:330px;z-index:1}
+.tile{position:absolute;border-radius:22px;border:3px solid;overflow:hidden;cursor:pointer}
+.tile .name{position:absolute;font-weight:800}
+.tile .score{position:absolute;left:0;right:0;font-weight:800;text-align:center;line-height:1;font-variant-numeric:tabular-nums}
+.tile .lead{position:absolute;right:12px;border-radius:999px;padding:6px 12px;letter-spacing:2px}
+.ripple{position:absolute;border-radius:22px;pointer-events:none}
+.footer{position:absolute;left:0;right:0;bottom:30px;display:flex;justify-content:center;gap:12px;z-index:1}
+.chip{border-radius:999px;padding:10px 16px;letter-spacing:2px;position:relative}
+.chip::before{content:"";position:absolute;inset:0;border-radius:inherit;background:currentColor;opacity:.2}
+.layer{position:absolute;inset:0;background:var(--ink);color:var(--paper);z-index:5}
+.row{position:absolute;left:20px;width:370px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;cursor:pointer}
+.row.add{border:3px solid rgba(255,253,248,.4);justify-content:center;letter-spacing:2px}
+.bpill{position:absolute;height:48px;border:3px solid var(--paper);border-radius:999px;padding:0 22px;display:flex;align-items:center;letter-spacing:1px;cursor:pointer}
+.slots{position:absolute;top:86px;left:0;right:0;display:flex;justify-content:center;gap:14px}
+.slot{width:96px;height:106px;border-radius:16px;border:3px solid;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:84px;line-height:1}
+.mid{position:absolute;top:202px;left:0;right:0;height:48px;display:flex;justify-content:center;align-items:center;gap:12px}
+.mid .bpill{position:static}
+.mid .chip{cursor:pointer}
+.key{position:absolute;height:50px;border-radius:12px;background:rgba(255,253,248,.2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:800;font-size:40px;line-height:1}
+.key:active{background:rgba(255,253,248,.5)}
+.toast{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);background:var(--ink);color:var(--paper);border:2px solid rgba(255,253,248,.2);
+  border-radius:16px;padding:8px 8px 8px 18px;display:flex;align-items:center;gap:16px;z-index:8}
+.toast .undo{background:var(--paper);color:var(--ink);border-radius:10px;padding:10px 16px;cursor:pointer}
+.hold{position:absolute;inset:0;background:rgba(21,18,15,.9);color:var(--paper);z-index:9;pointer-events:none}
+.hold svg{position:absolute;left:63px;top:89px}
+.hold .cd{position:absolute;left:0;right:0;top:211px;text-align:center;font-weight:800;font-size:124px;line-height:84px}
+.hold .hint{position:absolute;left:0;right:0;bottom:40px;text-align:center;letter-spacing:2px;line-height:30px;white-space:normal}
+@media (prefers-reduced-motion:reduce){.ripple{display:none}}
+</style>
+
+<div class="top">
+  <h1>POINTS BLOCK</h1>
+  <p>A working preview of the Kode Dot app. The screen and the buttons below behave like the firmware.</p>
+</div>
+
+<div class="device">
+  <div class="screenbox" id="box"><div id="scr"></div></div>
+  <div class="controls">
+    <button class="btn" id="bTop" aria-label="Top button">TOP</button>
+    <div class="pad" aria-label="D-pad">
+      <span class="hub"></span><button id="pUp" aria-label="D-pad up">▲</button><span class="hub"></span>
+      <button id="pLeft" aria-label="D-pad left">◀</button><span class="hub"></span><button id="pRight" aria-label="D-pad right">▶</button>
+      <span class="hub"></span><button id="pDown" aria-label="D-pad down">▼</button><span class="hub"></span>
+    </div>
+    <button class="btn" id="bBot" aria-label="Bottom button">BOTTOM</button>
+  </div>
+  <div class="ledrow"><span id="led"></span>LED</div>
+</div>
+
+<p class="legend"><b>Tap</b> a block for +1, <b>hold</b> it for −1. <b>TOP</b> scores for the selected player. <b>◀ ▶</b> change who's selected. <b>BOTTOM twice</b> undoes. <b>Hold ▲</b> for 3 s to reset.<br>Keys: T top · ← → select · hold ↑ reset · B twice undo</p>
+
+<script>
+(()=>{
+const LONG_PRESS_MS=600, DOUBLE_PRESS_MS=450, HOLD_MS=3000, UNDO_SHOW_MS=6000, FLOOD_MS=300, RIPPLE_MS=300;
+const MAX_SCORE=999, MAX_PLAYERS=6, NAME_LEN=3, HISTORY_SIZE=100, DEFAULT_NAMES=["PET","JES"];
+const INK="#15120F", PAPER="#FFFDF8";
+const BLOCKS=[["#FF5436",1],["#FFC22E",1],["#19C98A",1],["#2F5BFF",0],["#FF6FB1",1],["#FF9A1F",1],["#00A6A6",0],["#B6E62E",1]];
+const ORDER=[0,3,1,6,4,2,5,7];
+const bg=c=>BLOCKS[c][0], fg=c=>BLOCKS[c][1]?INK:PAPER;
+// Score fonts: size, visible digit height, digit advance (from the firmware's font files)
+const FONTS=[[260,177,174.2],[180,123,120.6],[124,84,83.1],[84,58,56.3],[64,44,43]];
+const AREA={x:20,y:84,w:370,h:330}, GAP=10;
+
+const scr=document.getElementById('scr'), box=document.getElementById('box'), led=document.getElementById('led');
+const store={get(){try{return JSON.parse(localStorage.getItem('pointsblock')||'null')}catch(e){return null}},
+             set(v){try{localStorage.setItem('pointsblock',JSON.stringify(v))}catch(e){}}};
+
+let game=load(), history=[], mode='board', hold=null, toastTimer=0;
+let edit={index:-1,buf:'',colour:0};
+function defaultGame(){return {sel:0,p:DEFAULT_NAMES.map((n,i)=>({name:n,score:0,colour:ORDER[i]}))}}
+function load(){const g=store.get();
+  if(g&&Array.isArray(g.p)&&g.p.length>=1&&g.p.length<=MAX_PLAYERS&&g.sel<g.p.length&&g.p.every(p=>/^[A-Z]{1,3}$/.test(p.name)&&p.score>=0&&p.score<=MAX_SCORE&&BLOCKS[p.colour]))return g;
+  return defaultGame();}
+let saveT=0; const save=()=>{clearTimeout(saveT);saveT=setTimeout(()=>store.set(game),1500)};
+const clone=g=>JSON.parse(JSON.stringify(g));
+function pushHistory(){history.push(clone(game)); if(history.length>HISTORY_SIZE)history.shift()}
+
+// ---------- fit the 410x502 screen ----------
+function fit(){const s=Math.min(1,(window.innerWidth-32-40)/410,(window.innerHeight-260)/502);
+  const k=Math.max(.5,s); scr.style.transform=`scale(${k})`; box.style.width=410*k+'px'; box.style.height=502*k+'px'; scale=k}
+let scale=1; window.addEventListener('resize',fit);
+function local(e){const r=scr.getBoundingClientRect();return {x:(e.clientX-r.left)/scale,y:(e.clientY-r.top)/scale}}
+
+// ---------- helpers ----------
+const el=(tag,cls,parent,text)=>{const d=document.createElement(tag); if(cls)d.className=cls; if(text!=null)d.textContent=text; if(parent)parent.appendChild(d); return d};
+const anim=(node,frames,opts)=>node&&node.animate?node.animate(frames,opts):null;
+const bounce=(node,from)=>anim(node,[{transform:`translateY(${from}px)`},{transform:`translateY(${-from*0.15}px)`,offset:.7},{transform:'translateY(0)'}],{duration:220,easing:'ease-out'});
+const nope=node=>anim(node,Array.from({length:11},(_,i)=>{const t=i/10;return{transform:`translateX(${Math.sin(t*6*Math.PI)*16*(1-t)}px)`}}),{duration:350});
+const leader=()=>{let best=-1,top=0,tie=false; game.p.forEach((p,i)=>{if(p.score>top){top=p.score;best=i;tie=false}else if(p.score===top&&p.score>0)tie=true}); return tie?-1:best};
+const nextFree=()=>ORDER.find(c=>!game.p.some(p=>p.colour===c))??0;
+const busy=()=>!!hold;
+
+// ---------- board ----------
+let ui={};
+function buildBoard(){
+  scr.innerHTML='';
+  ui.brand=el('div','lbl brand',scr,'POINTS');
+  ui.pill=el('div','lbl pill',scr,'PLAYERS'); ui.pill.onclick=()=>{if(!busy()&&mode==='board')openPlayers()};
+  ui.area=el('div','area',scr);
+  const f=el('div','footer',scr); ui.chips=[el('div','lbl chip',f,'TAP +1'),el('div','lbl chip',f,'HOLD -1')];
+  ui.toast=el('div','toast lbl',scr); ui.toastText=el('span','',ui.toast); const u=el('span','undo',ui.toast,'UNDO');
+  u.onclick=e=>{if(busy())return; const r=u.getBoundingClientRect(); undo({x:(r.left+r.width/2-scr.getBoundingClientRect().left)/scale,y:(r.top-scr.getBoundingClientRect().top)/scale})};
+  ui.toast.hidden=true;
+  buildHold();
+  buildTiles();
+}
+function buildTiles(){
+  ui.area.innerHTML=''; ui.tiles=[];
+  const n=game.p.length, cols=n<=2?1:2, rows=Math.ceil(n/cols);
+  const tw=(AREA.w-GAP*(cols-1))/cols, th=(AREA.h-GAP*(rows-1))/rows, small=th<130||tw<300;
+  game.p.forEach((p,i)=>{
+    const spans=cols===2&&i===n-1&&n%2===1, w=spans?AREA.w:tw;
+    const t=el('div','tile',ui.area); Object.assign(t.style,{left:(i%cols)*(tw+GAP)+'px',top:Math.floor(i/cols)*(th+GAP)+'px',width:w+'px',height:th+'px',background:bg(p.colour),color:fg(p.colour)});
+    const name=el('div','name',t,p.name);
+    Object.assign(name.style,small?{left:'14px',top:'10px',fontSize:'22px',lineHeight:'22px',letterSpacing:'3px',fontWeight:700}:{left:'16px',top:'12px',fontSize:'40px',lineHeight:'36px',letterSpacing:'4px'});
+    const score=el('div','score',t); const lead=el('div','lbl lead',t,'LEAD'); lead.style.top=(small?8:12)+'px';
+    if(small)lead.style.padding='2px 12px';
+    lead.style.background='color-mix(in srgb, currentColor 20%, transparent)';
+    const tileObj={t,name,score,lead,w,h:th,band:small?32:48}; ui.tiles.push(tileObj);
+    attachPress(t,i); updateTile(i);
+  });
+  updateLead(); paint();
+}
+function updateTile(i){const o=ui.tiles[i]; if(!o)return; const txt=String(game.p[i].score), avail=o.h-o.band-10;
+  let f=FONTS.find(([s,vis,adv])=>vis<=avail&&adv*txt.length<=o.w-28)||FONTS[FONTS.length-1];
+  o.score.textContent=txt; o.score.style.fontSize=f[0]+'px'; o.score.style.lineHeight=f[1]+'px';
+  o.score.style.top=(o.band+Math.max(0,(avail-f[1])/2))+'px'}
+function updateLead(){const l=leader(); ui.tiles.forEach((o,i)=>o.lead.hidden=i!==l)}
+function paint(){const c=game.p[game.sel].colour, F=fg(c);
+  scr.style.background=bg(c); [ui.brand,ui.pill,...ui.chips].forEach(n=>n.style.color=F);
+  ui.tiles.forEach(o=>o.t.style.borderColor=F);
+  led.style.background=bg(c); led.style.boxShadow=`0 0 14px ${bg(c)}`}
+let flood=null;
+function floodFrom(at){
+  if(flood){flood.remove();flood=null;paint()}
+  const target=bg(game.p[game.sel].colour);
+  if(scr.style.background&&getComputedStyle(scr).backgroundColor===hexToRgb(target)){paint();return}
+  const w=Math.max(at.x,410-at.x)*2+4, h=Math.max(at.y,502-at.y)*2+4;
+  const d=el('div','flood'); d.style.background=target; scr.insertBefore(d,scr.firstChild); flood=d;
+  const a=anim(d,[{left:at.x+'px',top:at.y+'px',width:'0px',height:'0px'},{left:at.x-w/2+'px',top:at.y-h/2+'px',width:w+'px',height:h+'px'}],{duration:FLOOD_MS,easing:'cubic-bezier(.2,.7,.3,1)',fill:'forwards'});
+  const done=()=>{if(flood===d){d.remove();flood=null;paint()}}; if(a)a.onfinish=done; else done();
+}
+function hexToRgb(h){const n=parseInt(h.slice(1),16);return `rgb(${n>>16}, ${(n>>8)&255}, ${n&255})`}
+function ripple(i,at){const o=ui.tiles[i]; if(!o)return; const r=o.t.getBoundingClientRect(), s=scr.getBoundingClientRect();
+  const cx=Math.min(o.w,Math.max(0,at.x-(r.left-s.left)/scale)), cy=Math.min(o.h,Math.max(0,at.y-(r.top-s.top)/scale));
+  const d=el('div','ripple'); d.style.background=fg(game.p[i].colour); o.t.insertBefore(d,o.t.firstChild);
+  const reach=Math.max(cx,o.w-cx,cy,o.h-cy)+4, start=performance.now();
+  const step=now=>{const v=Math.min(1,(now-start)/RIPPLE_MS), e=1-Math.pow(1-v,3), rr=24+(reach-24)*e;
+    const x1=Math.max(0,cx-rr),y1=Math.max(0,cy-rr),x2=Math.min(o.w,cx+rr),y2=Math.min(o.h,cy+rr);
+    Object.assign(d.style,{left:x1+'px',top:y1+'px',width:x2-x1+'px',height:y2-y1+'px',opacity:.4*(1-v)});
+    if(v<1)requestAnimationFrame(step); else d.remove()}; requestAnimationFrame(step)}
+
+function select(i,at){if(i===game.sel)return; game.sel=i; floodFrom(at); save()}
+function addPoint(i,at){const p=game.p[i]; if(!p)return; if(p.score>=MAX_SCORE){nope(ui.tiles[i].score);return}
+  pushHistory(); p.score++; updateTile(i); bounce(ui.tiles[i].score,18); ripple(i,at); updateLead(); select(i,at); save()}
+function takePoint(i,at){const p=game.p[i]; if(!p)return; if(p.score===0){nope(ui.tiles[i].score);return}
+  pushHistory(); p.score--; updateTile(i); bounce(ui.tiles[i].score,-18); ripple(i,at); updateLead(); select(i,at); save()}
+function attachPress(t,i){let timer=0,long=false,pt=null;
+  t.addEventListener('pointerdown',e=>{if(busy()||mode!=='board')return; t.setPointerCapture?.(e.pointerId); pt=local(e); long=false;
+    timer=setTimeout(()=>{long=true;takePoint(i,pt)},LONG_PRESS_MS)});
+  const end=e=>{if(!timer)return; clearTimeout(timer); timer=0; if(!long&&e.type==='pointerup'&&!busy()&&mode==='board')addPoint(i,local(e))};
+  t.addEventListener('pointerup',end); t.addEventListener('pointercancel',end)}
+
+function sameRoster(a,b){return a.p.length===b.p.length&&a.p.every((p,i)=>p.name===b.p[i].name&&p.colour===b.p[i].colour)}
+function undo(at){if(mode==='edit')return; const prev=history.pop();
+  if(!prev){nope(mode==='board'?ui.area:ui.layer);return}
+  hideToast(); const was=game; game=prev;
+  if(sameRoster(was,game)){game.p.forEach((p,i)=>{if(p.score!==was.p[i].score){updateTile(i);bounce(ui.tiles[i].score,p.score>was.p[i].score?18:-18)}}); updateLead()}
+  else buildTiles();
+  if(game.sel!==was.sel)floodFrom(at); else paint();
+  if(mode==='players')openPlayers(); save()}
+function showToast(t){ui.toastText.textContent=t; ui.toast.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(hideToast,UNDO_SHOW_MS); scr.appendChild(ui.toast)}
+function hideToast(){ui.toast.hidden=true; clearTimeout(toastTimer)}
+
+// ---------- hold dial ----------
+function buildHold(){ui.hold=el('div','hold lbl',scr);
+  ui.hold.innerHTML=`<svg width="284" height="284" viewBox="0 0 284 284" aria-hidden="true">
+    <circle cx="142" cy="142" r="111" fill="none" stroke="${PAPER}" stroke-opacity=".2" stroke-width="18"/>
+    <circle id="hp" cx="142" cy="142" r="111" fill="none" stroke-width="18" stroke-linecap="round" transform="rotate(-90 142 142)" stroke-dasharray="0 999"/>
+    <circle id="hs" cx="142" cy="142" r="139" fill="none" stroke="${PAPER}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${2*Math.PI*139*50/360} 999"/></svg>
+    <div class="cd">3</div><div class="hint"></div>`;
+  ui.hold.hidden=true}
+const anyScore=()=>game.p.some(p=>p.score>0);
+function startHold(src,act,nopeNode){if(hold)return; if(act==='reset'&&!anyScore()){nope(nopeNode);return}
+  hold={src,act,start:performance.now()}; const c=act==='remove'?edit.colour:game.p[game.sel].colour;
+  ui.hold.querySelector('#hp').setAttribute('stroke',bg(c));
+  ui.hold.querySelector('.hint').innerHTML=act==='remove'?'KEEP HOLDING TO REMOVE<br>LET GO TO CANCEL':'KEEP HOLDING TO RESET<br>LET GO TO CANCEL';
+  ui.hold.hidden=false; scr.appendChild(ui.hold); requestAnimationFrame(tickHold)}
+function endHold(src){if(!hold||hold.src!==src)return; hold=null; ui.hold.hidden=true}
+function tickHold(now){if(!hold)return; const el_=now-hold.start;
+  if(el_>=HOLD_MS){const act=hold.act; hold=null; ui.hold.hidden=true; act==='reset'?resetScores():removePlayer(edit.index); return}
+  const C=2*Math.PI*111; ui.hold.querySelector('#hp').setAttribute('stroke-dasharray',`${C*el_/HOLD_MS} 999`);
+  ui.hold.querySelector('#hs').setAttribute('transform',`rotate(${(el_*360/700)%360-90} 142 142)`);
+  ui.hold.querySelector('.cd').textContent=Math.ceil((HOLD_MS-el_)/1000); requestAnimationFrame(tickHold)}
+function holdable(node,act){node.addEventListener('pointerdown',e=>{node.setPointerCapture?.(e.pointerId);startHold('touch',act,node)});
+  ['pointerup','pointercancel'].forEach(t=>node.addEventListener(t,()=>endHold('touch')))}
+function resetScores(){pushHistory(); game.p.forEach(p=>p.score=0); game.p.forEach((p,i)=>{updateTile(i);bounce(ui.tiles[i].score,-18)});
+  updateLead(); if(mode==='players')openPlayers(); save(); showToast('SCORES RESET')}
+function removePlayer(i){if(i<0||game.p.length<=1)return; const msg='REMOVED '+game.p[i].name; pushHistory();
+  game.p.splice(i,1); if(game.sel>i||game.sel>=game.p.length)game.sel=Math.max(0,game.sel-1);
+  buildTiles(); save(); closeEditor(); showToast(msg)}
+
+// ---------- players screen ----------
+function layer(){const l=el('div','layer',scr); return l}
+function openPlayers(){if(ui.layer)ui.layer.remove(); mode='players'; const L=ui.layer=layer();
+  el('div','lbl brand',L,'PLAYERS');
+  const done=el('div','lbl bpill',L,'DONE'); Object.assign(done.style,{top:'22px',right:'20px'}); done.onclick=()=>{if(busy())return; L.remove(); ui.layer=null; mode='board'};
+  const rows=game.p.length<MAX_PLAYERS?game.p.length+1:game.p.length;
+  for(let i=0;i<rows;i++){const add=i===game.p.length, r=el('div','lbl row'+(add?' add':''),L); r.style.top=90+i*50+'px';
+    if(add){r.textContent='+ ADD PLAYER'; r.onclick=()=>{if(!busy())openEditor(-1)}}
+    else{const p=game.p[i]; r.style.background=bg(p.colour); r.style.color=fg(p.colour);
+      const n=el('span','',r,p.name); n.style.letterSpacing='3px'; el('span','',r,String(p.score)); r.onclick=()=>{if(!busy())openEditor(i)}}}
+  const reset=el('div','lbl bpill',L,'HOLD TO RESET SCORES'); Object.assign(reset.style,{bottom:'30px',left:'50%',transform:'translateX(-50%)'});
+  holdable(reset,'reset');
+  if(!ui.toast.hidden)scr.appendChild(ui.toast); scr.appendChild(ui.hold)}
+
+// ---------- name editor ----------
+function openEditor(i){edit.index=i; edit.buf=i>=0?game.p[i].name:''; edit.colour=i>=0?game.p[i].colour:nextFree();
+  mode='edit'; const L=ui.edit=layer();
+  el('div','lbl brand',L,i<0?'NEW PLAYER':'NICKNAME');
+  const done=el('div','lbl bpill',L,'DONE'); Object.assign(done.style,{top:'22px',right:'20px'}); done.onclick=()=>{if(!busy())finishEdit()};
+  ui.slotRow=el('div','slots',L); ui.slots=[0,1,2].map(()=>el('div','slot',ui.slotRow));
+  const mid=el('div','mid',L);
+  if(i>=0){if(game.p.length>1){const rm=el('div','lbl bpill',mid,'HOLD TO REMOVE'); holdable(rm,'remove')}}
+  else DEFAULT_NAMES.filter(n=>!game.p.some(p=>p.name===n)).forEach(n=>{const c=el('div','lbl chip',mid,n); c.style.color=PAPER; c.onclick=()=>{if(busy())return; edit.buf=n; refreshSlots(); ui.slots.forEach(s=>bounce(s,12))}});
+  const kw=48,kh=50,g=6,cols=7,kx=(410-(cols*kw+(cols-1)*g))/2;
+  for(let k=0;k<27;k++){const key=el('div','key',L,k<26?String.fromCharCode(65+k):'DEL');
+    Object.assign(key.style,{left:kx+(k%cols)*(kw+g)+'px',top:262+Math.floor(k/cols)*(kh+g)+'px',width:(k<26?kw:kw*2+g)+'px'});
+    if(k===26){key.className='key lbl'; key.style.letterSpacing='2px'}
+    key.onclick=()=>{if(busy())return; if(k===26){if(!edit.buf){nope(ui.slotRow);return} edit.buf=edit.buf.slice(0,-1)}
+      else{if(edit.buf.length>=NAME_LEN){nope(ui.slotRow);return} edit.buf+=String.fromCharCode(65+k); refreshSlots(); bounce(ui.slots[edit.buf.length-1],12); return}
+      refreshSlots()}}
+  refreshSlots(); if(!ui.toast.hidden)scr.appendChild(ui.toast); scr.appendChild(ui.hold)}
+function refreshSlots(){ui.slots.forEach((s,k)=>{const filled=k<edit.buf.length, active=k===edit.buf.length;
+  s.textContent=filled?edit.buf[k]:''; s.style.background=filled?bg(edit.colour):active?'rgba(255,253,248,.1)':'transparent';
+  s.style.borderColor=filled?'transparent':active?PAPER:'rgba(255,253,248,.4)'; s.style.color=filled?fg(edit.colour):PAPER})}
+function finishEdit(){const b=edit.buf;
+  if(b){if(edit.index<0){if(game.p.length<MAX_PLAYERS){pushHistory(); game.p.push({name:b,score:0,colour:edit.colour}); buildTiles(); save()}}
+    else if(game.p[edit.index].name!==b){pushHistory(); game.p[edit.index].name=b; buildTiles(); save()}}
+  closeEditor()}
+function closeEditor(){if(ui.edit){ui.edit.remove(); ui.edit=null} openPlayers()}
+
+// ---------- physical buttons ----------
+function topPress(){if(busy()||mode!=='board')return; const i=game.sel,o=ui.tiles[i]; const r=o.t.getBoundingClientRect(),s=scr.getBoundingClientRect();
+  addPoint(i,{x:(r.left+r.width/2-s.left)/scale,y:(r.top-s.top)/scale})}
+let lastBottom=0;
+function bottomPress(){const now=performance.now(); if(now-lastBottom<=DOUBLE_PRESS_MS){lastBottom=0; if(!busy())undo({x:205,y:501})} else lastBottom=now}
+function step(d){if(busy()||mode!=='board'||game.p.length<2)return; const s=(game.sel+game.p.length+d)%game.p.length, o=ui.tiles[s];
+  const r=o.t.getBoundingClientRect(),sc=scr.getBoundingClientRect(); select(s,{x:(r.left+r.width/2-sc.left)/scale,y:(r.top+r.height/2-sc.top)/scale}); bounce(o.name,d>0?12:-12)}
+const padUpDown=()=>{if(mode==='board')startHold('pad','reset',ui.area)}, padUpUp=()=>endHold('pad');
+const press=(id,down,up)=>{const b=document.getElementById(id); b.addEventListener('pointerdown',e=>{e.preventDefault();b.classList.add('on');down&&down()});
+  ['pointerup','pointercancel','pointerleave'].forEach(t=>b.addEventListener(t,()=>{if(b.classList.contains('on')){b.classList.remove('on');up&&up()}}))};
+press('bTop',topPress); press('bBot',bottomPress); press('pLeft',()=>step(-1)); press('pRight',()=>step(1)); press('pUp',padUpDown,padUpUp); press('pDown');
+const keys={t:'bTop',T:'bTop',' ':'bTop',b:'bBot',B:'bBot',ArrowLeft:'pLeft',ArrowRight:'pRight',ArrowUp:'pUp'};
+document.addEventListener('keydown',e=>{const id=keys[e.key]; if(!id||e.repeat)return; e.preventDefault(); document.getElementById(id).classList.add('on');
+  ({bTop:topPress,bBot:bottomPress,pLeft:()=>step(-1),pRight:()=>step(1),pUp:padUpDown})[id]()});
+document.addEventListener('keyup',e=>{const id=keys[e.key]; if(!id)return; document.getElementById(id).classList.remove('on'); if(id==='pUp')padUpUp()});
+
+fit(); buildBoard();
+})();
+</script>

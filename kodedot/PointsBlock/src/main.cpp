@@ -205,7 +205,8 @@ static lv_obj_t *holdLayer, *arcTrack, *arcProgress, *arcSpinner, *lblCountdown,
 // Layout (410 x 502)
 static const int32_t AREA_X = 20, AREA_Y = 84, AREA_W = 370, AREA_H = 330, TILE_GAP = 10;
 static const int32_t TILE_RADIUS = 22;
-static const int32_t SMALL_TILE_H = 130;   // below this, names drop to 22 px
+static const int32_t SMALL_TILE_H = 130;   // below this height, names drop to 22 px
+static const int32_t SMALL_TILE_W = 300;   // below this width too, so LEAD fits beside the name
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -480,7 +481,7 @@ static void floodFrom(lv_point_t at) {
 // -----------------------------------------------------------------------------
 // Scoreboard tiles
 // -----------------------------------------------------------------------------
-static bool smallTiles() { return tileH < SMALL_TILE_H; }
+static bool smallTiles() { return tileH < SMALL_TILE_H || tileW < SMALL_TILE_W; }
 
 static int32_t textWidth(const char *s, const lv_font_t *f) {
     int32_t w = 0;
